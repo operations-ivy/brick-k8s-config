@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chuck-app
+  namespace: chuck
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chuck-app
+  template:
+    metadata:
+      labels:
+        app: chuck-app
+    spec:
+      containers:
+        - name: chuck-app
+          image: your-dockerhub-username/my-python-api-app:latest
+          env:
+            - name: DB_CONNECTION_STRING
+              value: "postgresql://zaphod:zaphod@postgres:5432/chuck"
+          ports:
+            - containerPort: 5000  # Adjust if your app uses a different port
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chuck-app-service
+spec:
+  selector:
+    app: chuck-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
