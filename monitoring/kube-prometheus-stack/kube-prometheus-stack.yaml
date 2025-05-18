@@ -1,0 +1,70 @@
+alertmanager:
+  enabled: true
+  persistentVolume:
+    enabled: false
+  replicaCount: 1
+  resources:
+    limits:
+      memory: 100Mi
+      cpu: 100m
+
+grafana:
+  enabled: true
+  adminPassword: "admin"
+  persistence:
+    enabled: false
+  resources:
+    limits:
+      memory: 150Mi
+      cpu: 100m
+  service:
+    type: ClusterIP
+
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  enabled: true
+  hostNetwork: true
+  service:
+    port: 19100
+    targetPort: 19100
+    name: metrics
+  extraArgs:
+    - --web.listen-address=:19100
+  resources:
+    requests:
+      memory: 50Mi
+      cpu: 50m
+    limits:
+      memory: 100Mi
+      cpu: 100m
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    retention: 24h
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelector:
+      any: true
+    podMonitorSelectorNilUsesHelmValues: false
+    replicas: 1
+    storageSpec: {}
+    resources:
+      limits:
+        memory: 300Mi
+        cpu: 200m
+
+kube-state-metrics:
+  enabled: true
+  resources:
+    limits:
+      memory: 100Mi
+      cpu: 100m
