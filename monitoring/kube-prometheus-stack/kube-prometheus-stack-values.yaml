@@ -56,7 +56,13 @@ prometheus:
       any: true
     podMonitorSelectorNilUsesHelmValues: false
     replicas: 1
-    storageSpec: {}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
     resources:
       limits:
         memory: 300Mi

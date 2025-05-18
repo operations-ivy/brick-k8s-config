@@ -4,7 +4,7 @@ helm repo update
 
 helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
   --namespace monitoring \
-  -f values.yaml
+  -f kube-prometheus-stack-values.yaml
 
 kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
 
