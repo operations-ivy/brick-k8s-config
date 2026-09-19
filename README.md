@@ -56,12 +56,11 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 ## Repo layout
 
 - `dashboard/` — Kubernetes Dashboard (v2.7.0, last release with a static
-  manifest). The `kubernetes-dashboard` namespace and the `admin-user`
-  service account/binding are Terraform-managed now (see `terraform/`) —
-  apply that first, then:
+  manifest) + an `admin-user` service account. Deploy:
 
   ```bash
   kubectl apply -f dashboard/dashboard.yaml
+  kubectl apply -f dashboard/dashboard-admin-user.yaml
   ```
 
   Access via SSH-tunneled port-forward, not exposed on the LAN:
