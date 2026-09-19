@@ -2,13 +2,9 @@
 # v7+ requires Helm). Source: https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
 # Resource requests/limits added to the two Deployments to match the rest of
 # this repo's manifests; everything else is unmodified upstream content.
-
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: kubernetes-dashboard
-
----
+#
+# The kubernetes-dashboard Namespace itself is Terraform-managed (see
+# terraform/main.tf) — apply that first, this manifest assumes it exists.
 
 apiVersion: v1
 kind: ServiceAccount
