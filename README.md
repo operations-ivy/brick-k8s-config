@@ -61,14 +61,18 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   ```bash
   kubectl apply -f dashboard/dashboard.yaml
   kubectl apply -f dashboard/dashboard-admin-user.yaml
+  kubectl apply -f dashboard/dashboard-ingress.yaml
   ```
 
-  Access via SSH-tunneled port-forward, not exposed on the LAN:
+  Exposed on the LAN via Traefik at `http://dashboard.local` (add
+  `<main-node-ip> dashboard.local` to `/etc/hosts`; both node reservations
+  are set in the router, so this IP is stable). `dashboard-ingress.yaml`
+  includes a `ServersTransport` with `insecureSkipVerify` since the
+  dashboard's backend only speaks HTTPS with a self-signed cert — note the
+  front door itself is plain HTTP, so the login token travels in cleartext
+  on the LAN. Mint a login token from the control-plane node:
 
   ```bash
-  ssh -L 8443:localhost:8443 zaphod@<main-node-ip> \
-    'sudo k3s kubectl port-forward -n kubernetes-dashboard svc/kubernetes-dashboard 8443:443'
-  # in another terminal, mint a login token:
   ssh zaphod@<main-node-ip> 'sudo k3s kubectl -n kubernetes-dashboard create token admin-user'
   ```
 
