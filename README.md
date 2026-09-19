@@ -73,12 +73,23 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   ```
 
 - `monitoring/` — `kube-prometheus-stack` Helm values, prepped but **not
-  yet installed** (that's the open observability-stack todo).
+  yet installed** (that's the open observability-stack todo). Install with
+  `helm upgrade --install`, which is idempotent, rather than a one-shot
+  `helm install`:
+
+  ```bash
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+  helm repo update
+  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+    --namespace monitoring -f monitoring/kube-prometheus-stack/kube-prometheus-stack-values.yaml
+  ```
+
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
-- `terraform/` — Terraform for cluster-level k8s resources on top of the
-  running cluster (namespaces, and eventually the Helm release above). See
-  `terraform/README.md` for scope and status. Node bootstrap above stays a
-  plain script — not a good fit for Terraform.
+
+Everything here is plain `kubectl apply -f` (static manifests) or `helm
+upgrade --install` (things already packaged as a Helm chart) — no Terraform.
+It was tried for the dashboard's namespace/RBAC but dropped as unneeded
+tooling overhead for a single-operator homelab cluster this size.
 
 For deploying the `chucks-wisdom` app itself once this cluster is up, see
 that repo's `k8s_config/CLUSTER_SETUP.md`.
