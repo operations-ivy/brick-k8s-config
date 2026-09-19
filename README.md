@@ -1,37 +1,84 @@
-# MAIN NODE
+# brick-k8s-config
 
-- k3s-uninstall.sh
+Cluster-level infrastructure for the k3s cluster running on 2 Raspberry Pi
+5s (`brick420` control-plane, `brick2000` worker). Anything specific to the
+`chucks-wisdom` app itself (Postgres, reader, importer) lives in that repo,
+not here — this repo covers the cluster and would stay useful even if a
+different app replaced chuck.
 
-- ifconfig get private non routable IP (INTERNAL_IP)
+The steps below reflect the **current** live setup (k3s's built-in Traefik
+ingress, no Portainer/ingress-nginx) — this replaces an earlier version of
+this README from before the Pi 5 redeploy.
 
-- export INTERNAL_IP=ip address
+## MAIN NODE (control-plane)
 
-- curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --disable=traefik --flannel-backend=host-gw --tls-san=$INTERNAL_IP --bind-address=$INTERNAL_IP --advertise-address=$INTERNAL_IP --node-ip=$INTERNAL_IP --cluster-init" sh -s -
+```bash
+ssh zaphod@<main-node-ip>
 
-- get token from main node
+curl -sfL https://get.k3s.io | sudo sh -s - server \
+  --tls-san <main-node-ip> \
+  --write-kubeconfig-mode 644
+```
 
-- sudo cat /var/lib/rancher/k3s/server/node-token
+k3s ships Traefik and ServiceLB by default — leave them enabled.
 
-- sudo cp /etc/rancher/k3s/k3s.yaml $HOME/config
+```bash
+sudo cat /var/lib/rancher/k3s/server/node-token   # needed by the worker
+sudo k3s kubectl get nodes
+```
 
-- sudo chown zaphod:zaphod config
+## AGENT NODE (worker)
 
+```bash
+ssh zaphod@<worker-node-ip>
 
+curl -sfL https://get.k3s.io | K3S_URL=https://<main-node-ip>:6443 \
+  K3S_TOKEN=<token-from-main-node> sudo -E sh -s - agent
+```
 
-# AGENT NODE
+## Verify
 
-- k3s-agent-uninstall.sh
+```bash
+sudo k3s kubectl get nodes -o wide
+```
 
-- export NODE_TOKEN=token from main noded
+## LOCALHOST
 
-- curl -sfL https://get.k3s.io | K3S_URL=https://main_node_internal_ip:6443 K3S_TOKEN=$NODE_TOKEN sh -s
+Pull the kubeconfig to your workstation:
 
+```bash
+ssh zaphod@<main-node-ip> sudo cat /etc/rancher/k3s/k3s.yaml \
+  | sed "s/127.0.0.1/<main-node-ip>/" > ~/.kube/chuck-config
 
+KUBECONFIG=~/.kube/chuck-config kubectl get nodes
+```
 
-# LOCALHOST
+## Repo layout
 
-- scp zaphod@wintermute.local://home/zaphod/config $HOME/.kube/config
+- `dashboard/` — Kubernetes Dashboard (v2.7.0, last release with a static
+  manifest) + an `admin-user` service account. Deploy:
 
-- kubectl apply -f https://downloads.portainer.io/ce2-27/portainer-agent-k8s-lb.yaml
+  ```bash
+  kubectl apply -f dashboard/dashboard.yaml
+  kubectl apply -f dashboard/dashboard-admin-user.yaml
+  ```
 
-- kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+  Access via SSH-tunneled port-forward, not exposed on the LAN:
+
+  ```bash
+  ssh -L 8443:localhost:8443 zaphod@<main-node-ip> \
+    'sudo k3s kubectl port-forward -n kubernetes-dashboard svc/kubernetes-dashboard 8443:443'
+  # in another terminal, mint a login token:
+  ssh zaphod@<main-node-ip> 'sudo k3s kubectl -n kubernetes-dashboard create token admin-user'
+  ```
+
+- `monitoring/` — `kube-prometheus-stack` Helm values, prepped but **not
+  yet installed** (that's the open observability-stack todo).
+- `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
+- `terraform/` — Terraform for cluster-level k8s resources on top of the
+  running cluster (namespaces, and eventually the Helm release above). See
+  `terraform/README.md` for scope and status. Node bootstrap above stays a
+  plain script — not a good fit for Terraform.
+
+For deploying the `chucks-wisdom` app itself once this cluster is up, see
+that repo's `k8s_config/CLUSTER_SETUP.md`.
