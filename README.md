@@ -67,10 +67,14 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   Exposed on the LAN via Traefik at `http://dashboard.local` (add
   `<main-node-ip> dashboard.local` to `/etc/hosts`; both node reservations
   are set in the router, so this IP is stable). `dashboard-ingress.yaml`
-  includes a `ServersTransport` with `insecureSkipVerify` since the
-  dashboard's backend only speaks HTTPS with a self-signed cert — note the
-  front door itself is plain HTTP, so the login token travels in cleartext
-  on the LAN. Mint a login token from the control-plane node:
+  is a Traefik `IngressRoute` (not a plain `networking.k8s.io/Ingress` —
+  the `service.serverstransport` annotation on a plain Ingress silently
+  doesn't apply on this Traefik v3 build, so `IngressRoute`'s native
+  `serversTransport` field is used instead) referencing a `ServersTransport`
+  with `insecureSkipVerify`, since the dashboard's backend only speaks
+  HTTPS with a self-signed cert — note the front door itself is plain
+  HTTP, so the login token travels in cleartext on the LAN. Mint a login
+  token from the control-plane node:
 
   ```bash
   ssh zaphod@<main-node-ip> 'sudo k3s kubectl -n kubernetes-dashboard create token admin-user'
