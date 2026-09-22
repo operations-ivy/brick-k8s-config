@@ -96,7 +96,7 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   importer's dashboard.
 
 - `monitoring/loki/` — Grafana Loki (single-binary mode, filesystem storage,
-  7-day retention via the compactor), **installed** (2026-09-21). Deliberately
+  4-day retention via the compactor), **installed** (2026-09-21). Deliberately
   minimal for this cluster's size: SimpleScalable components (`read`/`write`/
   `backend`), the nginx `gateway`, memcached-based caching, MinIO, the test
   suite, and the canary are all disabled — this is a single pod writing to a
@@ -110,17 +110,45 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
     --namespace monitoring -f monitoring/loki/loki-values.yaml
   ```
 
+- `monitoring/tempo/` — Grafana Tempo (single-binary mode, filesystem
+  storage, 4-day retention via the compactor), same minimal single-pod
+  pattern as Loki, on `brick2000`. Install:
+
+  ```bash
+  helm upgrade --install tempo grafana/tempo --version 1.24.4 \
+    --namespace monitoring -f monitoring/tempo/tempo-values.yaml
+  ```
+
+- `monitoring/otel-collector/` — OpenTelemetry Collector (`deployment` mode,
+  not `daemonset` — it just receives OTLP over the network from app pods,
+  no host-level log/metric collection). Traces-only: the receivers/pipelines
+  for logs and metrics are nulled out, and the only exporter is `otlp` to
+  `tempo.monitoring.svc.cluster.local:4317`. importer's existing
+  Prometheus-native custom metrics deliberately stay on their current scrape
+  path rather than being routed through this collector too. Install:
+
+  ```bash
+  helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+  helm repo update
+  helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \
+    --namespace monitoring -f monitoring/otel-collector/otel-collector-values.yaml
+  ```
+
+  `chucks-wisdom`'s reader and importer send OTLP traces to
+  `otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4317`.
+
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
 
-## Log retention policy (2026-09-21)
+## Log & trace retention policy (2026-09-21, revised to 4 days 2026-09-22)
 
-Kept to 7 days end-to-end, at every layer, to keep storage bounded on both
+Kept to 4 days end-to-end, at every layer, to keep storage bounded on both
 Pis:
 
-- **Loki** (`monitoring/loki/`): `limits_config.retention_period: 168h`,
+- **Loki** (`monitoring/loki/`): `limits_config.retention_period: 96h`,
   compactor-enforced.
+- **Tempo** (`monitoring/tempo/`): `tempo.retention: 96h`, compactor-enforced.
 - **journald**, both nodes: `/etc/systemd/journald.conf.d/retention.conf`
-  sets `MaxRetentionSec=7day` plus a hard `SystemMaxUse` size cap as a
+  sets `MaxRetentionSec=4day` plus a hard `SystemMaxUse` size cap as a
   belt-and-suspenders limit (`300M` on `brick420` — only 20G free on its SD
   card; `2G` on `brick2000`, which has far more headroom). Not tracked as a
   manifest since it's host config, not cluster config — reapply by hand if
@@ -130,7 +158,7 @@ Pis:
   ssh zaphod@<node-ip> "sudo mkdir -p /etc/systemd/journald.conf.d && \
     sudo tee /etc/systemd/journald.conf.d/retention.conf >/dev/null <<'EOF'
   [Journal]
-  MaxRetentionSec=7day
+  MaxRetentionSec=4day
   SystemMaxUse=<300M on brick420, 2G on brick2000>
   EOF
   sudo systemctl restart systemd-journald"

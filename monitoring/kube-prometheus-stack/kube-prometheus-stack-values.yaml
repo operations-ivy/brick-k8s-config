@@ -29,6 +29,12 @@ grafana:
       url: http://loki.monitoring.svc.cluster.local:3100
       isDefault: false
       editable: false
+    - name: Tempo
+      type: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc.cluster.local:3200
+      isDefault: false
+      editable: false
 
 kubeControllerManager:
   enabled: false

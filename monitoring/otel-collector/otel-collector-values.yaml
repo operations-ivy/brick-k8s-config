@@ -1,0 +1,59 @@
+mode: deployment
+
+replicaCount: 1
+
+# Core distribution is enough — otlp receiver, batch/memory_limiter
+# processors, otlp exporter are all in core, no contrib components needed.
+image:
+  repository: otel/opentelemetry-collector
+command:
+  name: otelcol
+
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 256Mi
+    cpu: 200m
+
+# Traces-only: importer's Prometheus-native custom metrics stay on their
+# existing scrape path, no second metrics pipeline through this collector.
+# Only OTLP in — jaeger/zipkin receiver ports are disabled below since
+# nothing sends those protocols here.
+ports:
+  jaeger-compact:
+    enabled: false
+  jaeger-thrift:
+    enabled: false
+  jaeger-grpc:
+    enabled: false
+  zipkin:
+    enabled: false
+
+config:
+  receivers:
+    jaeger: null
+    zipkin: null
+    prometheus: null
+  exporters:
+    debug: null
+    # The chart renames a bare "otlp" exporter key to "otlp_grpc" internally
+    # (it collides with the "otlp" receiver's component ID) — name it that
+    # way here too so the values file matches what's actually rendered.
+    otlp_grpc:
+      endpoint: tempo.monitoring.svc.cluster.local:4317
+      tls:
+        insecure: true
+  service:
+    pipelines:
+      logs: null
+      metrics: null
+      traces:
+        receivers:
+          - otlp
+        processors:
+          - memory_limiter
+          - batch
+        exporters:
+          - otlp_grpc
