@@ -72,17 +72,24 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   ssh zaphod@<main-node-ip> 'sudo k3s kubectl -n kubernetes-dashboard create token admin-user'
   ```
 
-- `monitoring/` — `kube-prometheus-stack` Helm values, prepped but **not
-  yet installed** (that's the open observability-stack todo). Install with
-  `helm upgrade --install`, which is idempotent, rather than a one-shot
-  `helm install`:
+- `monitoring/` — `kube-prometheus-stack` Helm values, **installed** (2026-09-21).
+  Apply the namespace once, then install/upgrade with `helm upgrade --install`,
+  which is idempotent, rather than a one-shot `helm install`:
 
   ```bash
+  kubectl apply -f monitoring/monitoring-namespace.yaml
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
   helm repo update
   helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
     --namespace monitoring -f monitoring/kube-prometheus-stack/kube-prometheus-stack-values.yaml
   ```
+
+  Grafana is reachable via `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80`
+  (admin / the hardcoded `adminPassword` in the values file — see the repo's
+  secrets-management todo). Any app repo can auto-register a dashboard by
+  applying a `ConfigMap` labeled `grafana_dashboard: "1"` in its own namespace
+  (the sidecar watches cluster-wide); `chucks-wisdom` does this for the
+  importer's dashboard.
 
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
 
