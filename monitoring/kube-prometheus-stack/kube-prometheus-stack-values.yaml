@@ -14,9 +14,12 @@ grafana:
   persistence:
     enabled: false
   resources:
-    limits:
-      memory: 150Mi
+    requests:
+      memory: 200Mi
       cpu: 100m
+    limits:
+      memory: 400Mi
+      cpu: 200m
   service:
     type: ClusterIP
 
@@ -37,8 +40,6 @@ prometheus-node-exporter:
     port: 19100
     targetPort: 19100
     name: metrics
-  extraArgs:
-    - --web.listen-address=:19100
   resources:
     requests:
       memory: 50Mi
