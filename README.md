@@ -84,14 +84,69 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
     --namespace monitoring -f monitoring/kube-prometheus-stack/kube-prometheus-stack-values.yaml
   ```
 
-  Grafana is reachable via `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80`
-  (admin / the hardcoded `adminPassword` in the values file — see the repo's
-  secrets-management todo). Any app repo can auto-register a dashboard by
+  Grafana is exposed on the LAN via a plain Traefik `Ingress` (`monitoring/grafana-ingress.yaml`,
+  applied separately — `kubectl apply -f monitoring/grafana-ingress.yaml`) at
+  `http://grafana.local` (add `<main-node-ip> grafana.local` to `/etc/hosts`;
+  no `IngressRoute`/`ServersTransport` needed here, unlike the dashboard,
+  since Grafana serves plain HTTP rather than self-signed HTTPS). Login is
+  admin / the hardcoded `adminPassword` in the values file — see the repo's
+  secrets-management todo. Any app repo can auto-register a dashboard by
   applying a `ConfigMap` labeled `grafana_dashboard: "1"` in its own namespace
   (the sidecar watches cluster-wide); `chucks-wisdom` does this for the
   importer's dashboard.
 
+- `monitoring/loki/` — Grafana Loki (single-binary mode, filesystem storage,
+  7-day retention via the compactor), **installed** (2026-09-21). Deliberately
+  minimal for this cluster's size: SimpleScalable components (`read`/`write`/
+  `backend`), the nginx `gateway`, memcached-based caching, MinIO, the test
+  suite, and the canary are all disabled — this is a single pod writing to a
+  10Gi PVC, scheduled on `brick2000` (`chuck.io/storage-node=true`, same as
+  Postgres) so it doesn't compete with `brick420`'s small SD card. Install:
+
+  ```bash
+  helm repo add grafana https://grafana.github.io/helm-charts
+  helm repo update
+  helm upgrade --install loki grafana/loki --version 7.3.0 \
+    --namespace monitoring -f monitoring/loki/loki-values.yaml
+  ```
+
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
+
+## Log retention policy (2026-09-21)
+
+Kept to 7 days end-to-end, at every layer, to keep storage bounded on both
+Pis:
+
+- **Loki** (`monitoring/loki/`): `limits_config.retention_period: 168h`,
+  compactor-enforced.
+- **journald**, both nodes: `/etc/systemd/journald.conf.d/retention.conf`
+  sets `MaxRetentionSec=7day` plus a hard `SystemMaxUse` size cap as a
+  belt-and-suspenders limit (`300M` on `brick420` — only 20G free on its SD
+  card; `2G` on `brick2000`, which has far more headroom). Not tracked as a
+  manifest since it's host config, not cluster config — reapply by hand if
+  either Pi is ever reimaged:
+
+  ```bash
+  ssh zaphod@<node-ip> "sudo mkdir -p /etc/systemd/journald.conf.d && \
+    sudo tee /etc/systemd/journald.conf.d/retention.conf >/dev/null <<'EOF'
+  [Journal]
+  MaxRetentionSec=7day
+  SystemMaxUse=<300M on brick420, 2G on brick2000>
+  EOF
+  sudo systemctl restart systemd-journald"
+  ```
+
+- **kubelet container logs** (pod stdout/stderr, `/var/log/pods`): no change
+  needed — both nodes run plain `k3s agent`/`k3s server` with no kubelet-arg
+  overrides, so it's already on the upstream kubelet defaults
+  (`containerLogMaxSize: 10Mi`, `containerLogMaxFiles: 5` = 50Mi/container
+  cap). That's size-bounded, not age-bounded, but was already safe from
+  unbounded growth — no explosion risk, just not framed in days like the
+  other two layers.
+- `rsyslog` is inactive on both nodes (journald-only logging), so there's no
+  separate flat-file `/var/log/syslog` growth to manage — the small existing
+  `/etc/logrotate.d/` entries on `brick2000` (e.g. `prometheus-node-exporter`,
+  from its apt package) are unrelated to this and were left alone.
 
 Everything here is plain `kubectl apply -f` (static manifests) or `helm
 upgrade --install` (things already packaged as a Helm chart) — no Terraform.
