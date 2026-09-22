@@ -1,0 +1,62 @@
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  useTestSchema: true
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  limits_config:
+    retention_period: 168h
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+
+singleBinary:
+  replicas: 1
+  nodeSelector:
+    chuck.io/storage-node: "true"
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+      cpu: 300m
+
+# Everything below is chart-default extra scaffolding not needed for a
+# single-node homelab install: SimpleScalable components, HA cache/gateway
+# layers, MinIO, self-tests, and the canary.
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+gateway:
+  enabled: false
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+memcached:
+  enabled: false
+memcachedExporter:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+minio:
+  enabled: false
+monitoring:
+  serviceMonitor:
+    enabled: false
+  selfMonitoring:
+    enabled: false
+  lokiCanary:
+    enabled: false
