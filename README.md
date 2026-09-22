@@ -84,9 +84,13 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
     --namespace monitoring -f monitoring/kube-prometheus-stack/kube-prometheus-stack-values.yaml
   ```
 
-  Grafana is reachable via `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80`
-  (admin / the hardcoded `adminPassword` in the values file — see the repo's
-  secrets-management todo). Any app repo can auto-register a dashboard by
+  Grafana is exposed on the LAN via a plain Traefik `Ingress` (`monitoring/grafana-ingress.yaml`,
+  applied separately — `kubectl apply -f monitoring/grafana-ingress.yaml`) at
+  `http://grafana.local` (add `<main-node-ip> grafana.local` to `/etc/hosts`;
+  no `IngressRoute`/`ServersTransport` needed here, unlike the dashboard,
+  since Grafana serves plain HTTP rather than self-signed HTTPS). Login is
+  admin / the hardcoded `adminPassword` in the values file — see the repo's
+  secrets-management todo. Any app repo can auto-register a dashboard by
   applying a `ConfigMap` labeled `grafana_dashboard: "1"` in its own namespace
   (the sidecar watches cluster-wide); `chucks-wisdom` does this for the
   importer's dashboard.
