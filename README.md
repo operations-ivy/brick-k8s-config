@@ -61,14 +61,26 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   ```bash
   kubectl apply -f dashboard/dashboard.yaml
   kubectl apply -f dashboard/dashboard-admin-user.yaml
+  kubectl apply -f dashboard/dashboard-ingress.yaml
   ```
 
-  Access via SSH-tunneled port-forward, not exposed on the LAN:
+  Exposed on the LAN via Traefik at `https://dashboard.local` (add
+  `<main-node-ip> dashboard.local` to `/etc/hosts`; both node reservations
+  are set in the router, so this IP is stable). `dashboard-ingress.yaml`
+  is a Traefik `IngressRoute` (not a plain `networking.k8s.io/Ingress` —
+  the `service.serverstransport` annotation on a plain Ingress silently
+  doesn't apply on this Traefik v3 build, so `IngressRoute`'s native
+  `serversTransport` field is used instead) referencing a `ServersTransport`
+  with `insecureSkipVerify`, since the dashboard's backend only speaks
+  HTTPS with a self-signed cert. The route itself runs on Traefik's
+  `websecure` entrypoint with `tls: {}` (Traefik's own default self-signed
+  cert) — plain HTTP won't work here regardless of backend config, since
+  the Dashboard's frontend refuses to allow sign-in unless served over
+  HTTPS or from `localhost`. Expect a browser cert warning to click
+  through (self-signed, same as the tunnel approach this replaced). Mint
+  a login token from the control-plane node:
 
   ```bash
-  ssh -L 8443:localhost:8443 zaphod@<main-node-ip> \
-    'sudo k3s kubectl port-forward -n kubernetes-dashboard svc/kubernetes-dashboard 8443:443'
-  # in another terminal, mint a login token:
   ssh zaphod@<main-node-ip> 'sudo k3s kubectl -n kubernetes-dashboard create token admin-user'
   ```
 
