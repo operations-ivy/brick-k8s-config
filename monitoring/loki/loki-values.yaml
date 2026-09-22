@@ -8,7 +8,7 @@ loki:
   storage:
     type: filesystem
   limits_config:
-    retention_period: 168h
+    retention_period: 96h
   compactor:
     retention_enabled: true
     delete_request_store: filesystem
