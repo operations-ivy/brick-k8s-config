@@ -10,7 +10,13 @@ alertmanager:
 
 grafana:
   enabled: true
-  adminPassword: "admin"
+  # Real value lives in monitoring/kube-prometheus-stack/grafana-admin-sealedsecret.yaml
+  # (encrypted, safe to commit) — decrypted in-cluster by the sealed-secrets
+  # controller into a plain Secret this only references by name.
+  admin:
+    existingSecret: "grafana-admin-credentials"
+    userKey: admin-user
+    passwordKey: admin-password
   persistence:
     enabled: false
   resources:

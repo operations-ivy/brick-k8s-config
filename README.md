@@ -151,6 +151,41 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
 
+- `secrets/` — the [Sealed Secrets](https://github.com/bitnami/sealed-secrets) controller, so real secret values never sit in git as plaintext. Install:
+
+  ```bash
+  kubectl apply -f secrets/sealed-secrets-namespace.yaml
+  helm upgrade --install sealed-secrets oci://registry-1.docker.io/bitnamicharts/sealed-secrets --version 2.20.0 \
+    --namespace sealed-secrets -f secrets/sealed-secrets/sealed-secrets-values.yaml
+  ```
+
+  **Pi note:** first-boot RSA-4096 keypair generation took ~80s on a Pi 5 node — well past the chart's default ~30s liveness/readiness budget, which killed and restarted the pod before it ever finished. `sealed-secrets-values.yaml` enables a generous `startupProbe` to fix this; if you ever see the controller stuck crash-looping right after install with no error in its logs (just `"Searching for existing private keys"` and nothing after), this is why.
+
+  `secrets/sealed-secrets-public-cert.pem` is the controller's public cert (safe to commit — public key only), fetched via:
+
+  ```bash
+  kubeseal --controller-name=sealed-secrets --controller-namespace=sealed-secrets --fetch-cert > secrets/sealed-secrets-public-cert.pem
+  ```
+
+  **The resulting `SealedSecret` YAMLs do NOT live in this repo** — this repo
+  is public, and while the ciphertext is safe by design, its safety depends
+  entirely on the controller's private key never leaking for as long as git
+  history exists. No reason to make that bet publicly. They live in the
+  private companion repo [`brick-k8s-secrets`](https://github.com/operations-ivy/brick-k8s-secrets)
+  instead, at the same relative path they'd be applied from here. To seal a
+  new secret:
+
+  ```bash
+  kubectl create secret generic <name> --namespace <ns> --dry-run=client \
+    --from-literal=key1=value1 --from-literal=key2=value2 -o yaml | \
+  kubeseal --cert secrets/sealed-secrets-public-cert.pem --format yaml \
+    > ~/code/brick-k8s-secrets/path/to/<name>-sealedsecret.yaml
+
+  kubectl apply -f ~/code/brick-k8s-secrets/path/to/<name>-sealedsecret.yaml
+  ```
+
+  The resulting `SealedSecret` YAML is safe to commit — only the in-cluster controller can decrypt it. **Sealing a value is not a substitute for keeping a durable copy of it** (KeePass, etc.) — once sealed there's no way to read the plaintext back out except by pulling the live decrypted `Secret` off the running cluster, so save the value somewhere you control before or as you seal it, not only in git.
+
 ## Log & trace retention policy (2026-09-21, revised to 4 days 2026-09-22)
 
 Kept to 4 days end-to-end, at every layer, to keep storage bounded on both
