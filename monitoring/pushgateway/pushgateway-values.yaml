@@ -1,0 +1,24 @@
+# Prometheus Pushgateway — for batch jobs (e.g. wigle-sync's hourly CronJob)
+# whose pods exit long before Prometheus would ever scrape them. Jobs push
+# their results here at the end of each run; Prometheus scrapes the gateway.
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  # Keep the pushing job's own `job`/`instance` labels instead of overwriting
+  # them with the gateway's.
+  honorLabels: true
+
+# Pushed series otherwise vanish on a pod restart, taking "last successful
+# sync" timestamps with them until the next run that sets them.
+persistentVolume:
+  enabled: true
+  size: 100Mi
+
+resources:
+  requests:
+    memory: 16Mi
+    cpu: 10m
+  limits:
+    memory: 64Mi
+    cpu: 50m

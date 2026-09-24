@@ -149,6 +149,17 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   `chucks-wisdom`'s reader and importer send OTLP traces to
   `otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4317`.
 
+- `monitoring/pushgateway/` — Prometheus Pushgateway, for batch jobs whose
+  pods are gone before Prometheus would scrape them (`wigle-sync`'s hourly
+  CronJob pushes to
+  `http://pushgateway-prometheus-pushgateway.monitoring.svc.cluster.local:9091`).
+  Scraped via the chart's `ServiceMonitor` with `honorLabels`. Install:
+
+  ```bash
+  helm upgrade --install pushgateway prometheus-community/prometheus-pushgateway \
+    --namespace monitoring -f monitoring/pushgateway/pushgateway-values.yaml
+  ```
+
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
 
 - `secrets/` — the [Sealed Secrets](https://github.com/bitnami/sealed-secrets) controller, so real secret values never sit in git as plaintext. Install:

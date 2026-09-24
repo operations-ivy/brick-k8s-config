@@ -1,5 +1,15 @@
 tempo:
   retention: 96h
+  # The chart reads resources from `tempo.resources`; a top-level `resources`
+  # is silently ignored, which left tempo-0 unbounded until 2026-09-24.
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      # ~216Mi before any wigle-sync traces; headroom for more instrumented apps.
+      memory: 1Gi
+      cpu: 500m
 
 persistence:
   enabled: true
@@ -8,10 +18,3 @@ persistence:
 nodeSelector:
   chuck.io/storage-node: "true"
 
-resources:
-  requests:
-    memory: 256Mi
-    cpu: 100m
-  limits:
-    memory: 512Mi
-    cpu: 300m
