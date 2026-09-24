@@ -98,7 +98,8 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
   Grafana is exposed on the LAN via a plain Traefik `Ingress` (`monitoring/grafana-ingress.yaml`,
   applied separately — `kubectl apply -f monitoring/grafana-ingress.yaml`) at
-  `http://grafana.local` (add `<main-node-ip> grafana.local` to `/etc/hosts`;
+  `http://grafana.local` (announced over mDNS by brick420, see "LAN names for
+  ingresses (mDNS)" below;
   no `IngressRoute`/`ServersTransport` needed here, unlike the dashboard,
   since Grafana serves plain HTTP rather than self-signed HTTPS). Login is
   admin / the hardcoded `adminPassword` in the values file — see the repo's
@@ -196,6 +197,94 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   ```
 
   The resulting `SealedSecret` YAML is safe to commit — only the in-cluster controller can decrypt it. **Sealing a value is not a substitute for keeping a durable copy of it** (KeePass, etc.) — once sealed there's no way to read the plaintext back out except by pulling the live decrypted `Secret` off the running cluster, so save the value somewhere you control before or as you seal it, not only in git.
+
+## LAN names for ingresses (mDNS)
+
+Traefik routes by host name (`wigle.local`, `reader.local`, `grafana.local`),
+so every device needs those names to resolve to a node. Phones resolve `.local`
+names **only** via mDNS (Bonjour), so an `/etc/hosts` entry on a laptop never
+helps them. Instead, `brick420` announces each name over mDNS, pointing at
+itself (192.168.1.183). Traefik answers on every node, so any node works.
+
+This is host config, not a manifest. Reapply it by hand if brick420 is ever
+reimaged. On brick420, install `avahi-utils` and create
+`/etc/systemd/system/mdns-alias@.service`:
+
+```ini
+[Unit]
+Description=Publish %i.local over mDNS, pointing at this node (Traefik ingress)
+After=avahi-daemon.service network-online.target
+Requires=avahi-daemon.service
+
+[Service]
+# -R: no reverse (PTR) record; 192.168.1.183 already reverse-resolves to brick420.local.
+ExecStart=/usr/bin/avahi-publish -a -R %i.local 192.168.1.183
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable one instance per name:
+
+```bash
+sudo apt-get install -y avahi-utils
+sudo systemctl daemon-reload
+sudo systemctl enable --now mdns-alias@wigle mdns-alias@reader mdns-alias@grafana
+```
+
+For a new ingress, add its name with `sudo systemctl enable --now mdns-alias@<name>`.
+
+`avahi-publish -R` is what makes this work. A static entry in
+`/etc/avahi/hosts` also publishes a reverse record for the IP, which collides
+with brick420's own and gets rejected ("Local name collision"). The names go
+away if brick420 is down; so does everything else on it, so that's acceptable.
+
+## Native arm64 image builds
+
+App images are built natively on `brick2000` rather than under qemu on the
+laptop. A buildx builder on the laptop drives BuildKit running in a container
+there over SSH, with its cache on the NVMe. One-time setup (needs `zaphod` in
+the `docker` group on brick2000, which it is):
+
+```bash
+docker context create brick2000 --docker "host=ssh://zaphod@192.168.1.170"
+docker buildx create --name brick2000-arm64 --driver docker-container --platform linux/arm64 \
+  --buildkitd-config build/buildkitd.toml --bootstrap brick2000
+```
+
+Then build (and push, with the laptop's `docker login`) from any app repo:
+
+```bash
+docker buildx build --builder brick2000-arm64 --platform linux/arm64 \
+  -t whitepatrick/<image>:<version> --push .
+```
+
+`build/buildkitd.toml` caps the build cache at 5GB (least recently used
+layers go first, never below 1GB). Note that the legacy `gckeepstorage` option
+maps to BuildKit's *reserved* space, a floor rather than a cap, which is why
+the config uses `maxUsedSpace`. Creating the `brick2000` context also
+auto-registers a `brick2000` builder that uses Docker 20.10's built-in BuildKit
+v0.8; use `brick2000-arm64` instead.
+
+## Image retention: current + previous only
+
+No compliance requirements, so only the two newest versions of each app image
+are kept: on Docker Hub, in each node's containerd image store, and locally.
+Neither kubelet image GC (disk-pressure based) nor Docker Hub (no retention on
+this plan) can express "keep the last two versions", so
+`scripts/prune_images.py` does it explicitly. Run it after each release:
+
+```bash
+scripts/prune_images.py            # dry run: shows what would go
+scripts/prune_images.py --apply    # delete
+```
+
+Versions are ordered by semver and "newest" comes from Docker Hub. An image a
+node is still running can't be removed there and is reported instead. Hub
+deletes use `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` if set, otherwise the token
+`docker login` stored. Add new app repos to `REPOS` in the script.
 
 ## Log & trace retention policy (2026-09-21, revised to 4 days 2026-09-22)
 
