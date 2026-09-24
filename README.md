@@ -98,7 +98,8 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
   Grafana is exposed on the LAN via a plain Traefik `Ingress` (`monitoring/grafana-ingress.yaml`,
   applied separately — `kubectl apply -f monitoring/grafana-ingress.yaml`) at
-  `http://grafana.local` (add `<main-node-ip> grafana.local` to `/etc/hosts`;
+  `http://grafana.local` (announced over mDNS by brick420, see "LAN names for
+  ingresses (mDNS)" below;
   no `IngressRoute`/`ServersTransport` needed here, unlike the dashboard,
   since Grafana serves plain HTTP rather than self-signed HTTPS). Login is
   admin / the hardcoded `adminPassword` in the values file — see the repo's
@@ -196,6 +197,49 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   ```
 
   The resulting `SealedSecret` YAML is safe to commit — only the in-cluster controller can decrypt it. **Sealing a value is not a substitute for keeping a durable copy of it** (KeePass, etc.) — once sealed there's no way to read the plaintext back out except by pulling the live decrypted `Secret` off the running cluster, so save the value somewhere you control before or as you seal it, not only in git.
+
+## LAN names for ingresses (mDNS)
+
+Traefik routes by host name (`wigle.local`, `reader.local`, `grafana.local`),
+so every device needs those names to resolve to a node. Phones resolve `.local`
+names **only** via mDNS (Bonjour), so an `/etc/hosts` entry on a laptop never
+helps them. Instead, `brick420` announces each name over mDNS, pointing at
+itself (192.168.1.183). Traefik answers on every node, so any node works.
+
+This is host config, not a manifest. Reapply it by hand if brick420 is ever
+reimaged. On brick420, install `avahi-utils` and create
+`/etc/systemd/system/mdns-alias@.service`:
+
+```ini
+[Unit]
+Description=Publish %i.local over mDNS, pointing at this node (Traefik ingress)
+After=avahi-daemon.service network-online.target
+Requires=avahi-daemon.service
+
+[Service]
+# -R: no reverse (PTR) record; 192.168.1.183 already reverse-resolves to brick420.local.
+ExecStart=/usr/bin/avahi-publish -a -R %i.local 192.168.1.183
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then enable one instance per name:
+
+```bash
+sudo apt-get install -y avahi-utils
+sudo systemctl daemon-reload
+sudo systemctl enable --now mdns-alias@wigle mdns-alias@reader mdns-alias@grafana
+```
+
+For a new ingress, add its name with `sudo systemctl enable --now mdns-alias@<name>`.
+
+`avahi-publish -R` is what makes this work. A static entry in
+`/etc/avahi/hosts` also publishes a reverse record for the IP, which collides
+with brick420's own and gets rejected ("Local name collision"). The names go
+away if brick420 is down; so does everything else on it, so that's acceptable.
 
 ## Native arm64 image builds
 
