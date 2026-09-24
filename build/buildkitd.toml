@@ -1,0 +1,9 @@
+# BuildKit config for the native arm64 builder on brick2000 (see README,
+# "Native arm64 image builds"). Keeps the build cache bounded on its own:
+# above maxUsedSpace the least recently used layers are dropped first, down
+# to reservedSpace. (The older `gckeepstorage` maps to reservedSpace, a
+# floor, not a cap.)
+[worker.oci]
+  gc = true
+  maxUsedSpace = "5GB"
+  reservedSpace = "1GB"

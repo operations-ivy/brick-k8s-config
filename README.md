@@ -197,6 +197,51 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
   The resulting `SealedSecret` YAML is safe to commit — only the in-cluster controller can decrypt it. **Sealing a value is not a substitute for keeping a durable copy of it** (KeePass, etc.) — once sealed there's no way to read the plaintext back out except by pulling the live decrypted `Secret` off the running cluster, so save the value somewhere you control before or as you seal it, not only in git.
 
+## Native arm64 image builds
+
+App images are built natively on `brick2000` rather than under qemu on the
+laptop. A buildx builder on the laptop drives BuildKit running in a container
+there over SSH, with its cache on the NVMe. One-time setup (needs `zaphod` in
+the `docker` group on brick2000, which it is):
+
+```bash
+docker context create brick2000 --docker "host=ssh://zaphod@192.168.1.170"
+docker buildx create --name brick2000-arm64 --driver docker-container --platform linux/arm64 \
+  --buildkitd-config build/buildkitd.toml --bootstrap brick2000
+```
+
+Then build (and push, with the laptop's `docker login`) from any app repo:
+
+```bash
+docker buildx build --builder brick2000-arm64 --platform linux/arm64 \
+  -t whitepatrick/<image>:<version> --push .
+```
+
+`build/buildkitd.toml` caps the build cache at 5GB (least recently used
+layers go first, never below 1GB). Note that the legacy `gckeepstorage` option
+maps to BuildKit's *reserved* space, a floor rather than a cap, which is why
+the config uses `maxUsedSpace`. Creating the `brick2000` context also
+auto-registers a `brick2000` builder that uses Docker 20.10's built-in BuildKit
+v0.8; use `brick2000-arm64` instead.
+
+## Image retention: current + previous only
+
+No compliance requirements, so only the two newest versions of each app image
+are kept: on Docker Hub, in each node's containerd image store, and locally.
+Neither kubelet image GC (disk-pressure based) nor Docker Hub (no retention on
+this plan) can express "keep the last two versions", so
+`scripts/prune_images.py` does it explicitly. Run it after each release:
+
+```bash
+scripts/prune_images.py            # dry run: shows what would go
+scripts/prune_images.py --apply    # delete
+```
+
+Versions are ordered by semver and "newest" comes from Docker Hub. An image a
+node is still running can't be removed there and is reported instead. Hub
+deletes use `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` if set, otherwise the token
+`docker login` stored. Add new app repos to `REPOS` in the script.
+
 ## Log & trace retention policy (2026-09-21, revised to 4 days 2026-09-22)
 
 Kept to 4 days end-to-end, at every layer, to keep storage bounded on both
