@@ -3,10 +3,16 @@ alertmanager:
   persistentVolume:
     enabled: false
   replicaCount: 1
-  resources:
-    limits:
-      memory: 100Mi
-      cpu: 100m
+  # The chart reads Alertmanager's resources from alertmanagerSpec — a bare
+  # `alertmanager.resources` is silently ignored (it was, until 2026-09-24).
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: 32Mi
+        cpu: 10m
+      limits:
+        memory: 128Mi
+        cpu: 100m
 
 grafana:
   enabled: true
@@ -29,18 +35,39 @@ grafana:
   service:
     type: ClusterIP
   additionalDataSources:
+    # Fixed uids so dashboards (and the cross-links below) can reference these
+    # by uid instead of by whatever Grafana generates.
     - name: Loki
+      uid: loki
       type: loki
       access: proxy
       url: http://loki.monitoring.svc.cluster.local:3100
       isDefault: false
       editable: false
+      jsonData:
+        # Apps that log JSON with a `trace_id` field (wigle-sync) get a
+        # one-click link from the log line to the trace in Tempo.
+        derivedFields:
+          - name: TraceID
+            matcherType: regex
+            matcherRegex: '"trace_id":\s*"(\w+)"'
+            url: "$${__value.raw}"
+            datasourceUid: tempo
     - name: Tempo
+      uid: tempo
       type: tempo
       access: proxy
       url: http://tempo.monitoring.svc.cluster.local:3200
       isDefault: false
       editable: false
+      jsonData:
+        tracesToLogsV2:
+          datasourceUid: loki
+          filterByTraceID: true
+          spanStartTimeShift: "-5m"
+          spanEndTimeShift: "5m"
+          customQuery: true
+          query: '{namespace=~".+"} |= "$${__trace.traceId}"'
 
 kubeControllerManager:
   enabled: false
@@ -65,7 +92,8 @@ prometheus-node-exporter:
       cpu: 50m
     limits:
       memory: 100Mi
-      cpu: 100m
+      # Was 100m and throttled 23-36% of the time on scrape.
+      cpu: 250m
 
 prometheus:
   enabled: true
@@ -76,17 +104,31 @@ prometheus:
       any: true
     podMonitorSelectorNilUsesHelmValues: false
     replicas: 1
+    # On the NVMe worker like Loki/Tempo, not brick420's SD card: TSDB churn
+    # is exactly the write pattern that wears SD cards out, and local-path
+    # volumes can't be resized in place, so size for growth up front.
+    nodeSelector:
+      chuck.io/storage-node: "true"
     storageSpec:
       volumeClaimTemplate:
         spec:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 1Gi
+              storage: 10Gi
+    # Hard cap under the volume size so a cardinality spike trims old blocks
+    # instead of filling the disk and crash-looping.
+    retentionSize: 8GB
+    # Sized 2026-09-24 at ~98k head series: working set sat pinned at the old
+    # 300Mi limit and was OOM-killed on every 2h compaction (45 restarts), and
+    # CPU was throttled 31% at 200m. Headroom here is for new apps' series.
     resources:
-      limits:
-        memory: 300Mi
+      requests:
+        memory: 768Mi
         cpu: 200m
+      limits:
+        memory: 1536Mi
+        cpu: 1000m
 
 kube-state-metrics:
   enabled: true
