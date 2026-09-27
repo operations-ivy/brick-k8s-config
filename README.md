@@ -108,6 +108,15 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   (the sidecar watches cluster-wide); `chucks-wisdom` does this for the
   importer's dashboard.
 
+  Prometheus itself is exposed the same way at `http://prometheus.local`
+  (`monitoring/prometheus-ingress.yaml`, applied separately), so
+  `brick-status` on brick9000 (see `brick-cicd-config`) can query it. It has
+  no login, so anyone on the LAN can run queries; that was a deliberate
+  choice. An IP allowlist (Traefik `ipAllowList` middleware) does **not** work
+  here: Traefik's service uses `externalTrafficPolicy: Cluster`, so k3s's
+  ServiceLB rewrites every client's source address before Traefik sees it, and
+  the allowlist blocks everyone.
+
 - `monitoring/loki/` — Grafana Loki (single-binary mode, filesystem storage,
   4-day retention via the compactor), **installed** (2026-09-21). Deliberately
   minimal for this cluster's size: SimpleScalable components (`read`/`write`/
@@ -200,7 +209,8 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
 ## LAN names for ingresses (mDNS)
 
-Traefik routes by host name (`wigle.local`, `reader.local`, `grafana.local`),
+Traefik routes by host name (`wigle.local`, `reader.local`, `grafana.local`,
+`prometheus.local`, `jenkins.local`),
 so every device needs those names to resolve to a node. Phones resolve `.local`
 names **only** via mDNS (Bonjour), so an `/etc/hosts` entry on a laptop never
 helps them. Instead, `brick420` announces each name over mDNS, pointing at
@@ -231,7 +241,8 @@ Then enable one instance per name:
 ```bash
 sudo apt-get install -y avahi-utils
 sudo systemctl daemon-reload
-sudo systemctl enable --now mdns-alias@wigle mdns-alias@reader mdns-alias@grafana
+sudo systemctl enable --now mdns-alias@wigle mdns-alias@reader mdns-alias@grafana \
+  mdns-alias@prometheus mdns-alias@jenkins
 ```
 
 For a new ingress, add its name with `sudo systemctl enable --now mdns-alias@<name>`.
