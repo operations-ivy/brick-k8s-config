@@ -36,10 +36,28 @@ curl -sfL https://get.k3s.io | K3S_URL=https://<main-node-ip>:6443 \
   K3S_TOKEN=<token-from-main-node> sudo -E sh -s - agent
 ```
 
+## Pin each node to its IPv4 address
+
+Both nodes also get a global IPv6 address from the ISP's delegated prefix, and
+k3s registers it as a second node IP unless told otherwise. The prefix changes
+after an ISP outage (it did on 2026-09-29), leaving the nodes registered with
+an address they no longer have: kubelet then logs `failed to validate
+secondaryNodeIP` every 10s. The cluster is IPv4-only (pod CIDRs, flannel,
+services), so pin each node to its DHCP reservation. On each node, with its
+own address:
+
+```bash
+echo 'node-ip: <this-node-ip>' | sudo tee /etc/rancher/k3s/config.yaml
+sudo systemctl restart k3s         # k3s-agent on the worker
+```
+
+Pods keep running across the restart; the API is down for under a minute.
+Applied to both nodes on 2026-09-30.
+
 ## Verify
 
 ```bash
-sudo k3s kubectl get nodes -o wide
+sudo k3s kubectl get nodes -o wide   # INTERNAL-IP is IPv4 only
 ```
 
 ## LOCALHOST
