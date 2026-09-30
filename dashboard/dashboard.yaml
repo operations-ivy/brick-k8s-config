@@ -1,7 +1,10 @@
 # Kubernetes Dashboard v2.7.0 (last release with a static-manifest install;
 # v7+ requires Helm). Source: https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
 # Resource requests/limits added to the two Deployments to match the rest of
-# this repo's manifests; everything else is unmodified upstream content.
+# this repo's manifests, and the dashboard's imagePullPolicy changed from
+# Always to IfNotPresent (the tag is pinned; Always kept it in
+# ImagePullBackOff for ~19h after a restart during the 2026-09-29 ISP outage);
+# everything else is unmodified upstream content.
 
 apiVersion: v1
 kind: Namespace
@@ -182,7 +185,7 @@ spec:
       containers:
         - name: kubernetes-dashboard
           image: kubernetesui/dashboard:v2.7.0
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8443
               protocol: TCP
