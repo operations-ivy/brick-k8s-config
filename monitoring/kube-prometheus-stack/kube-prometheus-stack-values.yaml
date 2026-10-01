@@ -103,6 +103,14 @@ prometheus:
     serviceMonitorNamespaceSelector:
       any: true
     podMonitorSelectorNilUsesHelmValues: false
+    # Jenkins runs on brick9000, outside the cluster (brick-cicd-config), so no
+    # ServiceMonitor: scrape it through brick9000's port-80 proxy, which sends
+    # /prometheus to Jenkins. Same job name as before, so its history carries on.
+    additionalScrapeConfigs:
+      - job_name: jenkins
+        metrics_path: /prometheus/
+        static_configs:
+          - targets: ["192.168.1.221:80"]
     replicas: 1
     # On the NVMe worker like Loki/Tempo, not brick420's SD card: TSDB churn
     # is exactly the write pattern that wears SD cards out, and local-path

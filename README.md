@@ -228,7 +228,7 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 ## LAN names for ingresses (mDNS)
 
 Traefik routes by host name (`wigle.local`, `reader.local`, `grafana.local`,
-`prometheus.local`, `jenkins.local`),
+`prometheus.local`),
 so every device needs those names to resolve to a node. Phones resolve `.local`
 names **only** via mDNS (Bonjour), so an `/etc/hosts` entry on a laptop never
 helps them. Instead, `brick420` announces each name over mDNS, pointing at
@@ -260,8 +260,11 @@ Then enable one instance per name:
 sudo apt-get install -y avahi-utils
 sudo systemctl daemon-reload
 sudo systemctl enable --now mdns-alias@wigle mdns-alias@reader mdns-alias@grafana \
-  mdns-alias@prometheus mdns-alias@jenkins
+  mdns-alias@prometheus
 ```
+
+`jenkins.local` isn't one of them: Jenkins runs on brick9000, outside the
+cluster, and brick9000 announces that name itself (see `brick-cicd-config`).
 
 For a new ingress, add its name with `sudo systemctl enable --now mdns-alias@<name>`.
 
