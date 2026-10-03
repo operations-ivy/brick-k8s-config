@@ -6,8 +6,8 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  # Served through brick9000's proxy (brick-cicd-config). The .local name
-  # goes once nothing uses it.
+  # Served through brick9000's proxy (brick-cicd-config). grafana.local goes
+  # once the wigle console's next image (with the new Grafana link) is out.
   - host: grafana.brick.nozdormu.cloud
     http:
       paths:

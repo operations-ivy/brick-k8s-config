@@ -83,8 +83,7 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   ```
 
   Exposed on the LAN at `https://dashboard.brick.nozdormu.cloud` (see "LAN
-  names for ingresses" below; the old `https://dashboard.local` still works
-  for now). `dashboard-ingress.yaml`
+  names for ingresses" below). `dashboard-ingress.yaml`
   is a Traefik `IngressRoute` (not a plain `networking.k8s.io/Ingress` —
   the `service.serverstransport` annotation on a plain Ingress silently
   doesn't apply on this Traefik v3 build, so `IngressRoute`'s native
@@ -247,12 +246,12 @@ The names resolve on every device, phones included, with nothing to install:
   host table, pointing at `192.168.1.221`. No wildcards there: **a new ingress
   needs a router entry**, as well as its host name in the manifest.
 
-### The old .local names
+### The last .local name
 
-Until nothing uses them, the ingresses also answer to their old names
-(`grafana.local`, `prometheus.local`, `wigle.local`, `reader.local`,
-`dashboard.local`), which `brick420` announces over mDNS, pointing at itself
-(192.168.1.183), with one `mdns-alias@<name>` systemd unit each:
+`grafana.local` still answers, because the live wigle console image links to
+it; it goes once the next `wigle-console` image (with the new link) is out.
+`brick420` announces it over mDNS, pointing at itself (192.168.1.183), with an
+`mdns-alias@<name>` systemd unit:
 
 ```ini
 # /etc/systemd/system/mdns-alias@.service on brick420
@@ -271,9 +270,10 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-To retire them: remove the `.local` hosts from the manifests, then on brick420
-`sudo systemctl disable --now mdns-alias@wigle mdns-alias@reader
-mdns-alias@grafana mdns-alias@prometheus`.
+To retire it: remove the `grafana.local` rule from `monitoring/grafana-ingress.yaml`,
+then on brick420 `sudo systemctl disable --now mdns-alias@grafana` (and the
+unit file can go too). `wigle.local`, `reader.local`, `prometheus.local` and
+`dashboard.local` are already gone.
 
 ## Native arm64 image builds
 
