@@ -98,7 +98,10 @@ prometheus-node-exporter:
 prometheus:
   enabled: true
   prometheusSpec:
-    retention: 24h
+    # 72h so a problem found a day or two later still has its metrics.
+    # Measured 2026-10-01 at ~127k head series: ~20MB/h of blocks plus ~260MB
+    # WAL, so ~1.9GB at 72h, well inside the 10Gi volume and retentionSize.
+    retention: 72h
     serviceMonitorSelectorNilUsesHelmValues: false
     serviceMonitorNamespaceSelector:
       any: true

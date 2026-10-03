@@ -326,10 +326,17 @@ Pis:
 - **Loki** (`monitoring/loki/`): `limits_config.retention_period: 96h`,
   compactor-enforced.
 - **Tempo** (`monitoring/tempo/`): `tempo.retention: 96h`, compactor-enforced.
+- **Prometheus** (`monitoring/kube-prometheus-stack/`): `retention: 72h`
+  (24h until 2026-10-01), with `retentionSize: 8GB` as the hard cap on its
+  10Gi volume on `brick2000`.
 - **journald**, both nodes: `/etc/systemd/journald.conf.d/retention.conf`
   sets `MaxRetentionSec=4day` plus a hard `SystemMaxUse` size cap as a
   belt-and-suspenders limit (`300M` on `brick420` — only 20G free on its SD
-  card; `2G` on `brick2000`, which has far more headroom). Not tracked as a
+  card; `2G` on `brick2000`, which has far more headroom). Raspberry Pi OS
+  on Trixie ships `40-rpi-volatile-storage.conf` (`Storage=volatile`), so
+  without `Storage=persistent` the journal is lost on every reboot and these
+  limits never apply; `brick420` lost the evidence of the 2026-09-29 DNS
+  outage that way. Not tracked as a
   manifest since it's host config, not cluster config — reapply by hand if
   either Pi is ever reimaged:
 
@@ -337,6 +344,7 @@ Pis:
   ssh zaphod@<node-ip> "sudo mkdir -p /etc/systemd/journald.conf.d && \
     sudo tee /etc/systemd/journald.conf.d/retention.conf >/dev/null <<'EOF'
   [Journal]
+  Storage=persistent
   MaxRetentionSec=4day
   SystemMaxUse=<300M on brick420, 2G on brick2000>
   EOF
