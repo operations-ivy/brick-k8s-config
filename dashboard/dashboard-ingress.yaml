@@ -15,9 +15,8 @@ spec:
   entryPoints:
     - websecure
   routes:
-    # dashboard.brick.nozdormu.cloud through brick9000's proxy (brick-cicd-config);
-    # dashboard.local goes once nothing uses it.
-    - match: Host(`dashboard.brick.nozdormu.cloud`) || Host(`dashboard.local`)
+    # Through brick9000's proxy (brick-cicd-config).
+    - match: Host(`dashboard.brick.nozdormu.cloud`)
       kind: Rule
       services:
         - name: kubernetes-dashboard
