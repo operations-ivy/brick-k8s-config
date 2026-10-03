@@ -82,9 +82,9 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   kubectl apply -f dashboard/dashboard-ingress.yaml
   ```
 
-  Exposed on the LAN via Traefik at `https://dashboard.local` (add
-  `<main-node-ip> dashboard.local` to `/etc/hosts`; both node reservations
-  are set in the router, so this IP is stable). `dashboard-ingress.yaml`
+  Exposed on the LAN at `https://dashboard.brick.nozdormu.cloud` (see "LAN
+  names for ingresses" below; the old `https://dashboard.local` still works
+  for now). `dashboard-ingress.yaml`
   is a Traefik `IngressRoute` (not a plain `networking.k8s.io/Ingress` —
   the `service.serverstransport` annotation on a plain Ingress silently
   doesn't apply on this Traefik v3 build, so `IngressRoute`'s native
@@ -116,8 +116,8 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
   Grafana is exposed on the LAN via a plain Traefik `Ingress` (`monitoring/grafana-ingress.yaml`,
   applied separately — `kubectl apply -f monitoring/grafana-ingress.yaml`) at
-  `http://grafana.local` (announced over mDNS by brick420, see "LAN names for
-  ingresses (mDNS)" below;
+  `https://grafana.brick.nozdormu.cloud` (see "LAN names for ingresses"
+  below;
   no `IngressRoute`/`ServersTransport` needed here, unlike the dashboard,
   since Grafana serves plain HTTP rather than self-signed HTTPS). Login is
   admin / the hardcoded `adminPassword` in the values file — see the repo's
@@ -126,7 +126,8 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
   (the sidecar watches cluster-wide); `chucks-wisdom` does this for the
   importer's dashboard.
 
-  Prometheus itself is exposed the same way at `http://prometheus.local`
+  Prometheus itself is exposed the same way at
+  `https://prometheus.brick.nozdormu.cloud`
   (`monitoring/prometheus-ingress.yaml`, applied separately), so
   `brick-status` on brick9000 (see `brick-cicd-config`) can query it. It has
   no login, so anyone on the LAN can run queries; that was a deliberate
@@ -225,20 +226,36 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
   The resulting `SealedSecret` YAML is safe to commit — only the in-cluster controller can decrypt it. **Sealing a value is not a substitute for keeping a durable copy of it** (KeePass, etc.) — once sealed there's no way to read the plaintext back out except by pulling the live decrypted `Secret` off the running cluster, so save the value somewhere you control before or as you seal it, not only in git.
 
-## LAN names for ingresses (mDNS)
+## LAN names for ingresses
 
-Traefik routes by host name (`wigle.local`, `reader.local`, `grafana.local`,
-`prometheus.local`),
-so every device needs those names to resolve to a node. Phones resolve `.local`
-names **only** via mDNS (Bonjour), so an `/etc/hosts` entry on a laptop never
-helps them. Instead, `brick420` announces each name over mDNS, pointing at
-itself (192.168.1.183). Traefik answers on every node, so any node works.
+Every web UI is at `https://<app>.brick.nozdormu.cloud` (`grafana`,
+`prometheus`, `wigle`, `reader`, `dashboard`), through one front door: Caddy on
+brick9000 (`brick-cicd-config`, "Ports 80 and 443"). It holds a Let's Encrypt
+wildcard certificate and forwards each name to Traefik on either node, which
+routes by that name like any other host. So an ingress only needs its new host
+name; TLS ends at brick9000, and the hop to Traefik is plain HTTP on the LAN
+(the Dashboard's is HTTPS to Traefik's `websecure` entrypoint).
 
-This is host config, not a manifest. Reapply it by hand if brick420 is ever
-reimaged. On brick420, install `avahi-utils` and create
-`/etc/systemd/system/mdns-alias@.service`:
+brick9000 is the front door rather than Traefik so that Jenkins and the status
+board, which live there, stay reachable when the cluster is down.
+
+The names resolve on every device, phones included, with nothing to install:
+
+- **Public DNS** (Porkbun): one record, `A *.brick` to `192.168.1.221`.
+- **The router's DNS** drops public answers that point at private addresses
+  (DNS rebinding protection), so each name also has an entry in its static DNS
+  host table, pointing at `192.168.1.221`. No wildcards there: **a new ingress
+  needs a router entry**, as well as its host name in the manifest.
+
+### The old .local names
+
+Until nothing uses them, the ingresses also answer to their old names
+(`grafana.local`, `prometheus.local`, `wigle.local`, `reader.local`,
+`dashboard.local`), which `brick420` announces over mDNS, pointing at itself
+(192.168.1.183), with one `mdns-alias@<name>` systemd unit each:
 
 ```ini
+# /etc/systemd/system/mdns-alias@.service on brick420
 [Unit]
 Description=Publish %i.local over mDNS, pointing at this node (Traefik ingress)
 After=avahi-daemon.service network-online.target
@@ -254,24 +271,9 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-Then enable one instance per name:
-
-```bash
-sudo apt-get install -y avahi-utils
-sudo systemctl daemon-reload
-sudo systemctl enable --now mdns-alias@wigle mdns-alias@reader mdns-alias@grafana \
-  mdns-alias@prometheus
-```
-
-`jenkins.local` isn't one of them: Jenkins runs on brick9000, outside the
-cluster, and brick9000 announces that name itself (see `brick-cicd-config`).
-
-For a new ingress, add its name with `sudo systemctl enable --now mdns-alias@<name>`.
-
-`avahi-publish -R` is what makes this work. A static entry in
-`/etc/avahi/hosts` also publishes a reverse record for the IP, which collides
-with brick420's own and gets rejected ("Local name collision"). The names go
-away if brick420 is down; so does everything else on it, so that's acceptable.
+To retire them: remove the `.local` hosts from the manifests, then on brick420
+`sudo systemctl disable --now mdns-alias@wigle mdns-alias@reader
+mdns-alias@grafana mdns-alias@prometheus`.
 
 ## Native arm64 image builds
 
