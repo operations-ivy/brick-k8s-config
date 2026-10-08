@@ -76,15 +76,18 @@ def hub_tags(repo: str) -> list[str]:
     return tags
 
 
-def hub_token() -> str:
+def hub_token() -> str | None:
+    """A Hub API token, or None when there are no credentials to get one with."""
     user, pat = os.environ.get("DOCKERHUB_USERNAME"), os.environ.get("DOCKERHUB_TOKEN")
     if user and pat:
         return hub_request("POST", f"{HUB}/users/login", body={"username": user, "password": pat})["token"]
-    auths = json.load(open(os.path.expanduser("~/.docker/config.json"))).get("auths", {})
+    try:
+        with open(os.path.expanduser("~/.docker/config.json")) as f:
+            auths = json.load(f).get("auths", {})
+    except FileNotFoundError:
+        return None
     entry = auths.get("https://index.docker.io/v1/access-token", {}).get("auth")
-    if not entry:
-        sys.exit("No Docker Hub credentials: set DOCKERHUB_USERNAME/DOCKERHUB_TOKEN or `docker login`.")
-    return base64.b64decode(entry).decode().split(":", 1)[1]
+    return base64.b64decode(entry).decode().split(":", 1)[1] if entry else None
 
 
 # ---------------------------------------------------------------- k3s nodes
@@ -136,16 +139,21 @@ def main() -> int:
 
     print("\n== Docker Hub")
     token = hub_token() if args.apply else None
+    hub_apply = args.apply and token is not None
+    if args.apply and not hub_apply:
+        # Still prune the nodes and this machine; only Hub needs the token.
+        problems += 1
+        print("  no Docker Hub credentials (DOCKERHUB_USERNAME/DOCKERHUB_TOKEN or `docker login`): listing only")
     for repo in REPOS:
         for tag in stale(set(newest[repo]), args.keep, newest[repo]):
-            if args.apply:
+            if hub_apply:
                 try:
                     hub_request("DELETE", f"{HUB}/repositories/{NAMESPACE}/{repo}/tags/{tag}/", token)
                 except urllib.error.HTTPError as e:
                     problems += 1
                     print(f"  FAILED {repo}:{tag}: HTTP {e.code}")
                     continue
-            print(f"  {verb} {repo}:{tag}")
+            print(f"  {'deleted' if hub_apply else 'would delete'} {repo}:{tag}")
 
     for node in NODES:
         print(f"\n== node {node}")
