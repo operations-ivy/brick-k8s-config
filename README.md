@@ -228,15 +228,16 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 ## LAN names for ingresses
 
 Every web UI is at `https://<app>.brick.nozdormu.cloud` (`grafana`,
-`prometheus`, `wigle`, `reader`, `dashboard`), through one front door: Caddy on
+`prometheus`, `wigle`, `reader`, `dashboard`, and `jenkins`, whose Ingress
+comes from its Helm release in `brick-cicd-config`), through one front door: Caddy on
 brick9000 (`brick-cicd-config`, "Ports 80 and 443"). It holds a Let's Encrypt
 wildcard certificate and forwards each name to Traefik on either node, which
 routes by that name like any other host. So an ingress only needs its new host
 name; TLS ends at brick9000, and the hop to Traefik is plain HTTP on the LAN
 (the Dashboard's is HTTPS to Traefik's `websecure` entrypoint).
 
-brick9000 is the front door rather than Traefik so that Jenkins and the status
-board, which live there, stay reachable when the cluster is down.
+brick9000 is the front door rather than Traefik so that the status board,
+which lives there, stays reachable when the cluster is down.
 
 The names resolve on every device, phones included, with nothing to install:
 
