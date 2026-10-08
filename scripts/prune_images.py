@@ -18,6 +18,10 @@ Dry run by default:
     scripts/prune_images.py            # show what would go
     scripts/prune_images.py --apply    # actually delete
 
+Exits 1 if anything went wrong, or 2 if the only thing it couldn't do was
+delete from Docker Hub for lack of credentials (Jenkins shows that as
+unstable rather than failed).
+
 Docker Hub deletes use DOCKERHUB_USERNAME + DOCKERHUB_TOKEN (a personal access
 token with delete scope) when set, otherwise the access token `docker login`
 left in ~/.docker/config.json.
@@ -140,9 +144,9 @@ def main() -> int:
     print("\n== Docker Hub")
     token = hub_token() if args.apply else None
     hub_apply = args.apply and token is not None
-    if args.apply and not hub_apply:
+    hub_skipped = args.apply and not hub_apply
+    if hub_skipped:
         # Still prune the nodes and this machine; only Hub needs the token.
-        problems += 1
         print("  no Docker Hub credentials (DOCKERHUB_USERNAME/DOCKERHUB_TOKEN or `docker login`): listing only")
     for repo in REPOS:
         for tag in stale(set(newest[repo]), args.keep, newest[repo]):
@@ -183,7 +187,9 @@ def main() -> int:
                     continue
                 print(f"  {verb} {ref}")
 
-    return 1 if problems else 0
+    if problems:
+        return 1
+    return 2 if hub_skipped else 0
 
 
 if __name__ == "__main__":
