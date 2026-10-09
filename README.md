@@ -1,7 +1,7 @@
 # brick-k8s-config
 
-Cluster-level infrastructure for the k3s cluster running on 2 Raspberry Pi
-5s (`brick420` control-plane, `brick2000` worker). Anything specific to the
+Cluster-level infrastructure for the k3s cluster running on 3 Raspberry Pi
+5s (`brick420` control-plane, `brick2000` and `brick666` workers). Anything specific to the
 `chucks-wisdom` app itself (Postgres, reader, importer) lives in that repo,
 not here — this repo covers the cluster and would stay useful even if a
 different app replaced chuck.
@@ -29,12 +29,59 @@ sudo k3s kubectl get nodes
 
 ## AGENT NODE (worker)
 
-```bash
-ssh zaphod@<worker-node-ip>
+On a fresh Raspberry Pi OS (64-bit) install with SSH key login and
+passwordless sudo, and a DHCP reservation for its address:
 
-curl -sfL https://get.k3s.io | K3S_URL=https://<main-node-ip>:6443 \
-  K3S_TOKEN=<token-from-main-node> sudo -E sh -s - agent
+1. Turn on memory cgroups. The Pi kernel disables them by default
+   (`cgroup_disable=memory` in `/proc/cmdline`), and k3s won't run without
+   them. Append to the single line of `/boot/firmware/cmdline.txt`, then
+   reboot and check `/sys/fs/cgroup/cgroup.controllers` lists `memory`:
+
+   ```bash
+   sudo sed -i '1 s/$/ cgroup_enable=memory cgroup_memory=1/' /boot/firmware/cmdline.txt
+   sudo reboot
+   ```
+
+2. Pin the node to its IPv4 address before installing (see below for why):
+
+   ```bash
+   echo 'node-ip: <this-node-ip>' | sudo install -D -m 644 /dev/stdin /etc/rancher/k3s/config.yaml
+   ```
+
+3. Install the agent at the cluster's exact version (`kubectl get nodes`
+   shows it). From your workstation, piping the token straight from the
+   control plane so it's never printed:
+
+   ```bash
+   ssh <main-node> 'sudo cat /var/lib/rancher/k3s/server/node-token' \
+     | ssh <worker-node> 'read -r T; curl -sfL https://get.k3s.io \
+         | sudo INSTALL_K3S_VERSION=<version> K3S_URL=https://<main-node-ip>:6443 K3S_TOKEN="$T" sh -s - agent'
+   kubectl wait --for=condition=Ready node/<worker-node> --timeout=180s
+   ```
+
+The DaemonSets (node-exporter, promtail, Traefik's svclb) start on it by
+themselves, and brick9000's board picks it up from Prometheus. Running pods
+don't move to a new node on their own; to spread stateless ones onto it,
+cordon the other nodes, `kubectl rollout restart` the chosen deployments, and
+uncordon. Leave the pods with local-path volumes where they are.
+
+`brick666` (the former wardriving Pi 5, SD card) joined this way on
+2026-10-08.
+
+## Keep workloads off the control plane
+
+The single control plane runs on an SD card over Wi-Fi with a SQLite
+datastore, so a busy pod there can stall the API server for the whole
+cluster. It's tainted so only DaemonSets (which tolerate it) run there:
+
+```bash
+kubectl taint node brick420 node-role.kubernetes.io/control-plane=:NoSchedule
 ```
+
+Applied 2026-10-08, after moving the Pushgateway's volume off it. A pod with a
+local-path volume on a tainted node would stay `Pending` after its next
+restart, so check `kubectl get pv` first. Keep write-heavy volumes
+(Prometheus, Loki, Tempo) on `brick2000`, the only NVMe node.
 
 ## Pin each node to its IPv4 address
 
@@ -332,10 +379,11 @@ Pis:
 - **Prometheus** (`monitoring/kube-prometheus-stack/`): `retention: 72h`
   (24h until 2026-10-01), with `retentionSize: 8GB` as the hard cap on its
   10Gi volume on `brick2000`.
-- **journald**, both nodes: `/etc/systemd/journald.conf.d/retention.conf`
+- **journald**, every node: `/etc/systemd/journald.conf.d/retention.conf`
   sets `MaxRetentionSec=4day` plus a hard `SystemMaxUse` size cap as a
   belt-and-suspenders limit (`300M` on `brick420` — only 20G free on its SD
-  card; `2G` on `brick2000`, which has far more headroom). Raspberry Pi OS
+  card; `2G` on `brick2000`, which has far more headroom; `1G` on `brick666`,
+  an SD card with plenty free). Raspberry Pi OS
   on Trixie ships `40-rpi-volatile-storage.conf` (`Storage=volatile`), so
   without `Storage=persistent` the journal is lost on every reboot and these
   limits never apply; `brick420` lost the evidence of the 2026-09-29 DNS
@@ -349,7 +397,7 @@ Pis:
   [Journal]
   Storage=persistent
   MaxRetentionSec=4day
-  SystemMaxUse=<300M on brick420, 2G on brick2000>
+  SystemMaxUse=<300M on brick420, 2G on brick2000, 1G on brick666>
   EOF
   sudo systemctl restart systemd-journald"
   ```
