@@ -1,0 +1,36 @@
+# Overrides for the Traefik that k3s installs itself (a HelmChart in
+# kube-system); k3s's Helm controller merges these values in and upgrades it.
+# Two replicas on different nodes, so every web UI keeps answering while one
+# pod moves, restarts or rolls out, and a disruption budget so a node drain
+# never takes both.
+#   kubectl apply -f traefik/traefik-helmchartconfig.yaml
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    deployment:
+      replicas: 2
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    # k3s's chart tolerates the control-plane taint; keep Traefik on the
+    # workers, like everything else (brick420 is SD-card and Wi-Fi only).
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+    # Soft: with only one schedulable node left, both still run.
+    topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+            app.kubernetes.io/instance: traefik-kube-system
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
