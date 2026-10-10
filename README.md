@@ -31,7 +31,23 @@ sudo k3s kubectl get nodes
 ## AGENT NODE (worker)
 
 On a fresh Raspberry Pi OS (64-bit) install with SSH key login and
-passwordless sudo, and a DHCP reservation for its address:
+passwordless sudo, and a DHCP reservation for its address, one command does
+the steps below, skipping any already done (safe to re-run):
+
+```bash
+scripts/join-worker <host> --dry-run   # what it would do
+scripts/join-worker <host>
+scripts/rebalance --dry-run            # then, optionally, spread pods onto it
+scripts/rebalance
+```
+
+`scripts/rebalance [node]` (default: the newest worker) cordons every other
+node, the control plane included, restarts the Deployments and StatefulSets
+without a local-path volume (and coredns and traefik only with `--all`), and
+uncordons them even if it fails or is interrupted. It prints pods and memory
+per node before and after.
+
+The manual steps, for when the scripts can't be used:
 
 1. Turn on memory cgroups. The Pi kernel disables them by default
    (`cgroup_disable=memory` in `/proc/cmdline`), and k3s won't run without

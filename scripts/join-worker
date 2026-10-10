@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Join a Raspberry Pi to the cluster as a k3s worker, idempotently.
+
+    scripts/join-worker <host>            # do it
+    scripts/join-worker <host> --dry-run  # only show what it would do
+
+Runs from the workstation (KUBECONFIG pointing at the cluster), over SSH as
+zaphod with key login and passwordless sudo on <host>. It does the README's
+"AGENT NODE" steps, skipping any already done, so it's safe to re-run:
+
+1. preflight: SSH and passwordless sudo work, arm64
+2. memory cgroups on the kernel command line (reboots and waits if added)
+3. node-ip pinned to the host's IPv4 address in /etc/rancher/k3s/config.yaml
+   (added to an existing file, never replacing it)
+4. persistent journald, 4 days, size-capped by disk type
+5. the k3s agent at the cluster's exact version, with the join token piped
+   from the control plane over SSH, never printed or written here
+6. wait for Ready, then check node-exporter, promtail and svclb run on it
+
+Exits 1 if any step or check fails.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import time
+
+USER = "zaphod"
+SERVER = "brick420"  # the control plane, which holds the join token
+SERVER_URL = "https://192.168.1.183:6443"
+DAEMONSETS = ("prometheus-node-exporter", "promtail", "svclb-traefik")
+JOURNALD = """[Journal]
+Storage=persistent
+MaxRetentionSec=4day
+SystemMaxUse={cap}
+"""
+
+
+class Step(Exception):
+    """A step that failed; the message says why."""
+
+
+def run(cmd: list[str], input: str | None = None, check: bool = False) -> subprocess.CompletedProcess:
+    out = subprocess.run(cmd, input=input, capture_output=True, text=True)
+    if check and out.returncode:
+        raise Step(f"{' '.join(cmd[:4])}...: {out.stderr.strip() or out.stdout.strip()}")
+    return out
+
+
+def ssh(host: str, command: str, input: str | None = None, check: bool = True) -> str:
+    return run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", f"{USER}@{host}", command],
+               input=input, check=check).stdout
+
+
+def kubectl(*args: str) -> str:
+    return run(["kubectl", *args], check=True).stdout
+
+
+def cluster_version() -> str:
+    versions = {n["status"]["nodeInfo"]["kubeletVersion"] for n in json.loads(kubectl("get", "nodes", "-o", "json"))["items"]}
+    if len(versions) != 1:
+        raise Step(f"the nodes disagree on the k3s version: {sorted(versions)}")
+    return versions.pop()
+
+
+def needs_cgroups(cmdline: str) -> bool:
+    return not ("cgroup_enable=memory" in cmdline and "cgroup_memory=1" in cmdline)
+
+
+def journald_cap(root_device: str) -> str:
+    # SD cards wear and are small; NVMe has room.
+    return "1G" if root_device.startswith("/dev/mmcblk") else "2G"
+
+
+def with_node_ip(config: str, ip: str) -> str:
+    """config.yaml with node-ip set to `ip`, keeping every other line."""
+    lines = [l for l in config.splitlines() if not l.startswith("node-ip:")]
+    comment = "# IPv4 only: the IPv6 address comes from the ISP prefix, which changes after an outage."
+    if comment not in lines:
+        lines.insert(0, comment)
+    lines.insert(lines.index(comment) + 1, f"node-ip: {ip}")
+    return "\n".join(lines) + "\n"
+
+
+def join(host: str, dry: bool, say) -> None:
+    say(f"preflight on {host}")
+    arch = ssh(host, "uname -m").strip()
+    if arch != "aarch64":
+        raise Step(f"{host} is {arch}, not arm64")
+    if run(["ssh", "-o", "BatchMode=yes", f"{USER}@{host}", "sudo -n true"]).returncode:
+        raise Step(f"passwordless sudo doesn't work on {host} (add /etc/sudoers.d/zaphod-nopasswd)")
+    version = cluster_version()
+
+    cmdline = ssh(host, "cat /boot/firmware/cmdline.txt")
+    if needs_cgroups(cmdline):
+        say("turn on memory cgroups and reboot")
+        if not dry:
+            ssh(host, "sudo sed -i '1 s/$/ cgroup_enable=memory cgroup_memory=1/' /boot/firmware/cmdline.txt")
+            run(["ssh", "-o", "BatchMode=yes", f"{USER}@{host}", "sudo systemctl reboot"])
+            time.sleep(20)
+            for _ in range(60):
+                if run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", f"{USER}@{host}", "true"]).returncode == 0:
+                    break
+                time.sleep(5)
+            if "memory" not in ssh(host, "cat /sys/fs/cgroup/cgroup.controllers"):
+                raise Step("memory cgroups still off after the reboot")
+    else:
+        say("memory cgroups: already on")
+
+    ip = ssh(host, "ip -4 -o route get 1.1.1.1").split(" src ")[1].split()[0]
+    config = ssh(host, "sudo cat /etc/rancher/k3s/config.yaml 2>/dev/null || true")
+    if f"node-ip: {ip}" in config.splitlines():
+        say(f"node-ip: already {ip}")
+    else:
+        say(f"pin node-ip to {ip}")
+        if not dry:
+            ssh(host, "sudo install -d /etc/rancher/k3s && sudo tee /etc/rancher/k3s/config.yaml >/dev/null",
+                input=with_node_ip(config, ip))
+
+    root = ssh(host, "findmnt -n -o SOURCE /").strip()
+    want = JOURNALD.format(cap=journald_cap(root))
+    have = ssh(host, "cat /etc/systemd/journald.conf.d/retention.conf 2>/dev/null || true")
+    if have.strip():
+        say("journald retention: already set")
+    else:
+        say(f"persistent journald, 4 days, {journald_cap(root)} cap")
+        if not dry:
+            ssh(host, "sudo install -d /etc/systemd/journald.conf.d && "
+                      "sudo tee /etc/systemd/journald.conf.d/retention.conf >/dev/null && "
+                      "sudo systemctl restart systemd-journald", input=want)
+
+    installed = ssh(host, "k3s --version 2>/dev/null | head -1 || true")
+    active = run(["ssh", "-o", "BatchMode=yes", f"{USER}@{host}", "systemctl is-active -q k3s-agent"]).returncode == 0
+    if active and version in installed:
+        say(f"k3s agent: already {version}")
+    else:
+        say(f"install the k3s agent {version}")
+        if not dry:
+            fetched = run(["ssh", "-o", "BatchMode=yes", f"{USER}@{SERVER}", "sudo cat /var/lib/rancher/k3s/server/node-token"])
+            if fetched.returncode or not fetched.stdout.strip():
+                # Never echo the command's output here: it would be the token.
+                raise Step(f"couldn't read the join token from {SERVER} (exit {fetched.returncode})")
+            token = fetched.stdout
+            ssh(host, f"read -r T; curl -sfL https://get.k3s.io | sudo INSTALL_K3S_VERSION={version} "
+                      f"K3S_URL={SERVER_URL} K3S_TOKEN=\"$T\" sh -s - agent >/dev/null", input=token)
+
+    if dry:
+        return
+    name = ssh(host, "hostname").strip()
+    say(f"wait for {name} to be Ready")
+    if run(["kubectl", "wait", "--for=condition=Ready", f"node/{name}", "--timeout=180s"]).returncode:
+        raise Step(f"{name} isn't Ready")
+    missing = []
+    for _ in range(36):
+        pods = json.loads(kubectl("get", "pods", "-A", "-o", "json", f"--field-selector=spec.nodeName={name}"))["items"]
+        running = {p["metadata"]["name"] for p in pods if p["status"].get("phase") == "Running"}
+        missing = [d for d in DAEMONSETS if not any(r.startswith(f"{d}-") or d in r for r in running)]
+        if not missing:
+            break
+        time.sleep(5)
+    if missing:
+        raise Step(f"not running on {name}: {', '.join(missing)}")
+    say(f"{name} is Ready, with {', '.join(DAEMONSETS)} running")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("host", help="the Pi's hostname (SSH as zaphod)")
+    parser.add_argument("--dry-run", action="store_true", help="only show what would be done")
+    args = parser.parse_args()
+    prefix = "would: " if args.dry_run else ""
+    try:
+        join(args.host, args.dry_run, lambda msg: print(f"{prefix}{msg}", flush=True))
+    except Step as e:
+        print(f"FAILED: {e}", file=sys.stderr)
+        return 1
+    print("done" if not args.dry_run else "dry run: nothing changed")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
