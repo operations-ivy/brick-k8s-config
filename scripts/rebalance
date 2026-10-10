@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""Spread stateless pods onto a node (by default the newest).
+
+    scripts/rebalance                 # onto the newest node
+    scripts/rebalance brick1982       # onto a given node
+    scripts/rebalance --dry-run       # only show the plan
+    scripts/rebalance --all           # include coredns and traefik too
+
+Pods never move on their own, so this cordons every other node (the control
+plane included: k3s's add-ons tolerate its taint and would land there),
+`rollout restart`s the Deployments and StatefulSets that have no local-path
+volume, waits for them, and uncordons. The nodes it cordoned are uncordoned
+even if something fails or it's interrupted; nodes that were already
+cordoned are left as they were.
+
+Skipped: anything with a local-path PersistentVolumeClaim (its data lives on
+one node), DaemonSets, and, unless --all, coredns and traefik, whose restart
+is a cluster-wide blip.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import signal
+import subprocess
+import sys
+
+SKIP_UNLESS_ALL = {("kube-system", "coredns"), ("kube-system", "traefik")}
+
+
+def kubectl(*args: str, check: bool = True) -> str:
+    out = subprocess.run(["kubectl", *args], capture_output=True, text=True)
+    if check and out.returncode:
+        raise SystemExit(f"kubectl {' '.join(args[:3])}...: {out.stderr.strip()}")
+    return out.stdout
+
+
+def get(kind: str) -> list[dict]:
+    return json.loads(kubectl("get", kind, "-A", "-o", "json"))["items"]
+
+
+def newest_node(nodes: list[dict]) -> str:
+    workers = [n for n in nodes if "node-role.kubernetes.io/control-plane" not in n["metadata"].get("labels", {})]
+    return max(workers, key=lambda n: n["metadata"]["creationTimestamp"])["metadata"]["name"]
+
+
+def local_claims(pvcs: list[dict], pvs: list[dict]) -> set[tuple[str, str]]:
+    """(namespace, claim) for every claim bound to a local-path volume."""
+    local = {pv["metadata"]["name"] for pv in pvs if pv["spec"].get("storageClassName") == "local-path"}
+    return {(c["metadata"]["namespace"], c["metadata"]["name"]) for c in pvcs
+            if c["spec"].get("volumeName") in local}
+
+
+def movable(workloads: list[dict], claims: set[tuple[str, str]], include_all: bool) -> list[tuple[str, str, str, str]]:
+    """(kind, namespace, name, why-not) for each workload; why-not is "" when it moves."""
+    out = []
+    for w in workloads:
+        ns, name, kind = w["metadata"]["namespace"], w["metadata"]["name"], w["kind"]
+        spec = w["spec"]["template"]["spec"]
+        volumes = {(ns, v["persistentVolumeClaim"]["claimName"]) for v in spec.get("volumes", [])
+                   if "persistentVolumeClaim" in v}
+        # A StatefulSet's claims come from its volumeClaimTemplates (local-path here).
+        templated = kind == "StatefulSet" and w["spec"].get("volumeClaimTemplates")
+        if volumes & claims or templated:
+            why = "local volume"
+        elif (ns, name) in SKIP_UNLESS_ALL and not include_all:
+            why = "cluster-wide blip (use --all)"
+        else:
+            why = ""
+        out.append((kind, ns, name, why))
+    return sorted(out, key=lambda t: (t[1], t[2]))
+
+
+def spread() -> dict[str, tuple[int, str]]:
+    """Per node: running pods, and memory in use (from metrics-server)."""
+    counts: dict[str, int] = {}
+    for p in json.loads(kubectl("get", "pods", "-A", "-o", "json", "--field-selector=status.phase=Running"))["items"]:
+        node = p["spec"].get("nodeName", "?")
+        counts[node] = counts.get(node, 0) + 1
+    memory = {}
+    for line in kubectl("top", "nodes", "--no-headers", check=False).splitlines():
+        cols = line.split()
+        if len(cols) >= 5:
+            memory[cols[0]] = f"{cols[3]} ({cols[4]})"
+    return {n: (counts.get(n, 0), memory.get(n, "?")) for n in sorted(set(counts) | set(memory))}
+
+
+def show(title: str, s: dict[str, tuple[int, str]]) -> None:
+    print(title)
+    for node, (pods, mem) in s.items():
+        print(f"  {node:12} {pods:3} pods  {mem} memory")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("node", nargs="?", help="the node to fill (default: the newest worker)")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--all", action="store_true", help="also restart coredns and traefik")
+    args = parser.parse_args()
+
+    nodes = get("nodes")
+    target = args.node or newest_node(nodes)
+    if target not in {n["metadata"]["name"] for n in nodes}:
+        raise SystemExit(f"no node {target}")
+    others = [n["metadata"]["name"] for n in nodes
+              if n["metadata"]["name"] != target and not n["spec"].get("unschedulable")]
+    plan = movable([{**d, "kind": "Deployment"} for d in get("deployments")] +
+                   [{**s, "kind": "StatefulSet"} for s in get("statefulsets")],
+                   local_claims(get("pvc"), get("pv")), args.all)
+    moving = [p for p in plan if not p[3]]
+
+    before = spread()
+    show("before:", before)
+    print(f"onto {target}; cordon {', '.join(others) or 'nothing'}")
+    for kind, ns, name, why in plan:
+        print(f"  {'restart' if not why else 'skip   '} {kind.lower()} {ns}/{name}{f'  ({why})' if why else ''}")
+    if args.dry_run:
+        print("dry run: nothing changed")
+        return 0
+
+    cordoned: list[str] = []
+
+    def uncordon(*_):
+        for n in cordoned:
+            kubectl("uncordon", n, check=False)
+        if _:
+            raise SystemExit(130)
+    signal.signal(signal.SIGINT, uncordon)
+    signal.signal(signal.SIGTERM, uncordon)
+    failed = []
+    try:
+        for n in others:
+            kubectl("cordon", n)
+            cordoned.append(n)
+        for kind, ns, name, _ in moving:
+            kubectl("-n", ns, "rollout", "restart", f"{kind.lower()}/{name}")
+        for kind, ns, name, _ in moving:
+            out = subprocess.run(["kubectl", "-n", ns, "rollout", "status", f"{kind.lower()}/{name}", "--timeout=300s"],
+                                 capture_output=True, text=True)
+            if out.returncode:
+                failed.append(f"{ns}/{name}")
+    finally:
+        uncordon()
+    print(f"uncordoned {', '.join(cordoned) or 'nothing'}")
+    show("after:", spread())
+    if failed:
+        print(f"FAILED to roll out: {', '.join(failed)}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

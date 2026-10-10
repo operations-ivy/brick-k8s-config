@@ -23,6 +23,8 @@ def load(name: str, filename: str):
 
 prune = load("prune_images", "prune_images.py")
 validate = load("validate", "validate")
+join_worker = load("join_worker", "join-worker")
+rebalance = load("rebalance", "rebalance")
 
 
 class PruneTests(unittest.TestCase):
@@ -95,6 +97,61 @@ class ValidateTests(unittest.TestCase):
         base = {"service": {"port": 1, "type": "ClusterIP"}, "x": 1}
         merged = validate.deep_merge(base, {"service": {"port": 2}})
         self.assertEqual(merged, {"service": {"port": 2, "type": "ClusterIP"}, "x": 1})
+
+
+class JoinWorkerTests(unittest.TestCase):
+    def test_cgroups_needed_until_both_flags_are_on(self):
+        self.assertTrue(join_worker.needs_cgroups("console=tty1 rootwait"))
+        self.assertTrue(join_worker.needs_cgroups("rootwait cgroup_enable=memory"))
+        self.assertFalse(join_worker.needs_cgroups("rootwait cgroup_enable=memory cgroup_memory=1"))
+
+    def test_journald_cap_by_disk(self):
+        self.assertEqual(join_worker.journald_cap("/dev/mmcblk0p2"), "1G")
+        self.assertEqual(join_worker.journald_cap("/dev/nvme0n1p2"), "2G")
+
+    def test_node_ip_keeps_the_rest_of_the_config(self):
+        existing = 'node-ip: 10.0.0.9\nkubelet-arg:\n  - "system-reserved=cpu=500m,memory=1Gi"\n'
+        out = join_worker.with_node_ip(existing, "192.0.2.5")
+        self.assertIn("node-ip: 192.0.2.5", out)
+        self.assertNotIn("10.0.0.9", out)
+        self.assertIn('  - "system-reserved=cpu=500m,memory=1Gi"', out)
+        self.assertEqual(out, join_worker.with_node_ip(out, "192.0.2.5"))  # idempotent
+        self.assertTrue(join_worker.with_node_ip("", "192.0.2.5").startswith("# IPv4 only"))
+
+
+def workload(kind, ns, name, claims=(), templates=False):
+    w = {"kind": kind, "metadata": {"namespace": ns, "name": name},
+         "spec": {"template": {"spec": {"volumes": [{"persistentVolumeClaim": {"claimName": c}} for c in claims]}}}}
+    if templates:
+        w["spec"]["volumeClaimTemplates"] = [{"metadata": {"name": "data"}}]
+    return w
+
+
+class RebalanceTests(unittest.TestCase):
+    def test_newest_worker_never_the_control_plane(self):
+        nodes = [{"metadata": {"name": "cp", "creationTimestamp": "2026-12-01T00:00:00Z",
+                               "labels": {"node-role.kubernetes.io/control-plane": "true"}}},
+                 {"metadata": {"name": "old", "creationTimestamp": "2026-09-01T00:00:00Z"}},
+                 {"metadata": {"name": "new", "creationTimestamp": "2026-10-10T00:00:00Z"}}]
+        self.assertEqual(rebalance.newest_node(nodes), "new")
+
+    def test_local_volumes_and_blips_stay_put(self):
+        pvs = [{"metadata": {"name": "pv1"}, "spec": {"storageClassName": "local-path"}}]
+        pvcs = [{"metadata": {"namespace": "chuck", "name": "postgres-pvc"}, "spec": {"volumeName": "pv1"}}]
+        claims = rebalance.local_claims(pvcs, pvs)
+        plan = {(ns, name): why for _, ns, name, why in rebalance.movable([
+            workload("Deployment", "chuck", "postgres", ["postgres-pvc"]),
+            workload("Deployment", "chuck", "reader"),
+            workload("StatefulSet", "monitoring", "loki", templates=True),
+            workload("Deployment", "kube-system", "coredns"),
+        ], claims, include_all=False)}
+        self.assertEqual(plan[("chuck", "reader")], "")
+        self.assertEqual(plan[("chuck", "postgres")], "local volume")
+        self.assertEqual(plan[("monitoring", "loki")], "local volume")
+        self.assertIn("--all", plan[("kube-system", "coredns")])
+        with_all = {name: why for _, _, name, why in rebalance.movable(
+            [workload("Deployment", "kube-system", "coredns")], claims, include_all=True)}
+        self.assertEqual(with_all["coredns"], "")
 
 
 if __name__ == "__main__":
