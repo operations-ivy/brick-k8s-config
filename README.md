@@ -237,6 +237,14 @@ KUBECONFIG=~/.kube/chuck-config kubectl get nodes
 
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
 
+- `traefik/` — overrides for the Traefik k3s installs itself, as a
+  `HelmChartConfig` that k3s's Helm controller merges into its chart: two
+  replicas spread across the workers (never brick420), with a `PodDisruptionBudget` (`minAvailable:
+  1`), so the web UIs keep answering while one Traefik pod moves or restarts.
+  Apply with `kubectl apply -f traefik/traefik-helmchartconfig.yaml`. CoreDNS,
+  the other add-on in the request path, stays at one replica: k3s rewrites its
+  manifest whenever brick420 restarts, so a scaled-up CoreDNS doesn't stick.
+
 - `secrets/` — the [Sealed Secrets](https://github.com/bitnami/sealed-secrets) controller, so real secret values never sit in git as plaintext. Install:
 
   ```bash
