@@ -1,0 +1,27 @@
+# What scripts/validate checks (brick-k8s-config#30). Chart versions are the
+# ones running on the cluster; bump them here when upgrading a release.
+releases:
+  - {name: kube-prometheus-stack, namespace: monitoring, chart: prometheus-community/kube-prometheus-stack, version: 91.5.0, values: monitoring/kube-prometheus-stack/kube-prometheus-stack-values.yaml}
+  - {name: loki, namespace: monitoring, chart: grafana/loki, version: 7.3.0, values: monitoring/loki/loki-values.yaml}
+  - {name: tempo, namespace: monitoring, chart: grafana/tempo, version: 1.24.4, values: monitoring/tempo/tempo-values.yaml}
+  - {name: otel-collector, namespace: monitoring, chart: open-telemetry/opentelemetry-collector, version: 0.173.1, values: monitoring/otel-collector/otel-collector-values.yaml}
+  - {name: promtail, namespace: monitoring, chart: grafana/promtail, version: 6.17.1, values: monitoring/promtail/promtail-values.yaml}
+  - {name: pushgateway, namespace: monitoring, chart: prometheus-community/prometheus-pushgateway, version: 3.9.0, values: monitoring/pushgateway/pushgateway-values.yaml}
+  - {name: sealed-secrets, namespace: sealed-secrets, chart: oci://registry-1.docker.io/bitnamicharts/sealed-secrets, version: 2.20.0, values: secrets/sealed-secrets/sealed-secrets-values.yaml}
+
+# Values whose contents the chart passes through as free-form config, so
+# their keys can't be checked against the chart's defaults.
+freeform:
+  - loki.limits_config        # Loki's own limits config, rendered as-is
+  - config                    # otel-collector: the collector's own config
+
+# Manifests applied by hand only while debugging: checked, but their absence
+# from the cluster isn't drift.
+not_deployed:
+  - debug/
+
+# Diff lines that are expected to differ from the live cluster.
+expected_drift:
+  # The Dashboard writes its own CSRF key into kubernetes-dashboard-csrf at
+  # start; applying the manifest would blank it.
+  dashboard/dashboard.yaml: ["csrf:"]

@@ -58,5 +58,3 @@ monitoring:
     enabled: false
   selfMonitoring:
     enabled: false
-  lokiCanary:
-    enabled: false

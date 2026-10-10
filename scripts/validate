@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Check this repo's manifests and Helm values before they reach the cluster.
+
+    scripts/validate            # static checks (needs helm and its chart repos)
+    scripts/validate --cluster  # also read-only checks against the live cluster
+
+Static:
+- every YAML file parses, and every manifest has apiVersion, kind and a name
+- every Helm release in validate.yaml renders (`helm template`) with its values
+- no values key the chart doesn't know: Helm ignores those silently, so a
+  typo or a key a chart version dropped is a no-op nobody notices. The
+  chart's own defaults, merged with its sub-charts', are the reference; the
+  free-form blocks listed in validate.yaml aren't checked inside.
+
+--cluster (read-only; KUBECONFIG must point at the cluster):
+- every plain manifest passes `kubectl apply --dry-run=server`
+- drift: `kubectl diff` of every plain manifest, and each release's live
+  values (`helm get values`) against its values file
+- health: every Deployment available, every PodDisruptionBudget allowing a
+  disruption, and no pod but DaemonSets' on a control-plane node
+
+Exits 1 if anything fails. Needs PyYAML.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+# Not Kubernetes manifests: Helm values, the validate config, BuildKit config.
+NOT_MANIFESTS = {"validate.yaml"}
+
+
+def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+def yaml_files() -> list[Path]:
+    out = run(["git", "-C", str(ROOT), "ls-files", "*.yaml", "*.yml"]).stdout.split()
+    return [ROOT / f for f in out]
+
+
+def manifests(config: dict) -> list[Path]:
+    values = {ROOT / r["values"] for r in config["releases"]}
+    return [p for p in yaml_files() if p not in values and p.name not in NOT_MANIFESTS
+            and not p.name.endswith("-values.yaml")]
+
+
+def check_parse(files: list[Path], mans: list[Path]) -> list[str]:
+    errors = []
+    for p in files:
+        try:
+            docs = [d for d in yaml.safe_load_all(p.read_text()) if d is not None]
+        except yaml.YAMLError as e:
+            errors.append(f"{p.relative_to(ROOT)}: does not parse: {e}")
+            continue
+        if p in mans:
+            for d in docs:
+                if not (isinstance(d, dict) and d.get("apiVersion") and d.get("kind")
+                        and (d.get("metadata") or {}).get("name")):
+                    errors.append(f"{p.relative_to(ROOT)}: a document lacks apiVersion, kind or metadata.name")
+    return errors
+
+
+def unknown_keys(ours, theirs, freeform: set[str], path: str = "") -> list[str]:
+    """Paths in `ours` that `theirs` (the chart's defaults) doesn't have."""
+    if not isinstance(ours, dict) or not isinstance(theirs, dict) or path in freeform:
+        return []
+    out = []
+    for key, value in ours.items():
+        p = f"{path}.{key}" if path else str(key)
+        if key not in theirs:
+            out.append(p)
+        elif isinstance(theirs[key], dict) and theirs[key]:
+            out += unknown_keys(value, theirs[key], freeform, p)
+    return out
+
+
+def chart_defaults(chart_dir: Path) -> dict:
+    """A chart's values.yaml, with each sub-chart's defaults under its name
+    (or alias), the way Helm passes them down."""
+    values = yaml.safe_load((chart_dir / "values.yaml").read_text()) or {}
+    meta = yaml.safe_load((chart_dir / "Chart.yaml").read_text()) or {}
+    aliases = {d["name"]: d.get("alias", d["name"]) for d in meta.get("dependencies") or []}
+    for sub in sorted((chart_dir / "charts").glob("*/")) if (chart_dir / "charts").is_dir() else []:
+        if not (sub / "values.yaml").is_file():
+            continue
+        key = aliases.get(sub.name, sub.name)
+        values[key] = deep_merge(chart_defaults(sub), values.get(key))
+    return values
+
+
+def deep_merge(base, override):
+    """`override` on top of `base`, recursively, as Helm merges values."""
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return base if override is None else override
+    return {**base, **{k: deep_merge(base.get(k), v) for k, v in override.items()}}
+
+
+def check_releases(config: dict) -> list[str]:
+    errors = []
+    freeform = set(config.get("freeform") or [])
+    with tempfile.TemporaryDirectory() as tmp:
+        for r in config["releases"]:
+            name, values = r["name"], ROOT / r["values"]
+            dest = Path(tmp) / name
+            pulled = run(["helm", "pull", r["chart"], "--version", r["version"], "--untar", "--untardir", str(dest)])
+            if pulled.returncode:
+                errors.append(f"{name}: can't pull {r['chart']} {r['version']}: {pulled.stderr.strip()}")
+                continue
+            chart_dir = next(dest.iterdir())
+            rendered = run(["helm", "template", name, str(chart_dir), "-n", r["namespace"], "-f", str(values)])
+            if rendered.returncode:
+                errors.append(f"{name}: helm template fails: {rendered.stderr.strip()[:400]}")
+            ours = yaml.safe_load(values.read_text()) or {}
+            for key in unknown_keys(ours, chart_defaults(chart_dir), freeform):
+                errors.append(f"{name}: {r['values']}: '{key}' isn't a {r['chart'].rsplit('/', 1)[-1]} "
+                              f"{r['version']} value, so Helm ignores it")
+    return errors
+
+
+def check_cluster(config: dict, mans: list[Path]) -> list[str]:
+    errors = []
+    optional = tuple(config.get("not_deployed") or [])
+    expected = config.get("expected_drift") or {}
+    for p in mans:
+        rel = p.relative_to(ROOT)
+        dry = run(["kubectl", "apply", "--dry-run=server", "-f", str(p)])
+        if dry.returncode:
+            errors.append(f"{rel}: server dry run fails: {dry.stderr.strip()[:300]}")
+            continue
+        if str(rel).startswith(optional):
+            continue
+        diff = run(["kubectl", "diff", "-f", str(p)])
+        if diff.returncode == 1:
+            allowed = expected.get(str(rel), [])
+            changed = [l for l in diff.stdout.splitlines()
+                       if l[:2] in ("+ ", "- ") and "generation:" not in l
+                       and not any(a in l for a in allowed)]
+            if changed:
+                errors.append(f"{rel}: differs from the cluster ({len(changed)} lines; `kubectl diff -f {rel}`)")
+        elif diff.returncode > 1:
+            errors.append(f"{rel}: kubectl diff fails: {diff.stderr.strip()[:300]}")
+    for r in config["releases"]:
+        live = run(["helm", "get", "values", r["name"], "-n", r["namespace"], "-o", "json"])
+        if live.returncode:
+            errors.append(f"{r['name']}: can't read its live values: {live.stderr.strip()}")
+        elif (json.loads(live.stdout) or {}) != (yaml.safe_load((ROOT / r["values"]).read_text()) or {}):
+            errors.append(f"{r['name']}: live values differ from {r['values']} (run its helm upgrade)")
+    errors += check_health()
+    return errors
+
+
+def check_health() -> list[str]:
+    errors = []
+    def kget(*args):
+        return json.loads(run(["kubectl", "get", *args, "-o", "json"]).stdout or '{"items": []}')["items"]
+    for d in kget("deployments", "-A"):
+        want, have = d["spec"].get("replicas", 1), d["status"].get("availableReplicas", 0)
+        if have < want:
+            errors.append(f"deployment {d['metadata']['namespace']}/{d['metadata']['name']}: {have}/{want} available")
+    for b in kget("pdb", "-A"):
+        if b["status"].get("disruptionsAllowed", 0) < 1:
+            errors.append(f"pdb {b['metadata']['namespace']}/{b['metadata']['name']}: allows no disruption")
+    control = {n["metadata"]["name"] for n in kget("nodes")
+               if "node-role.kubernetes.io/control-plane" in n["metadata"].get("labels", {})}
+    for p in kget("pods", "-A", "--field-selector=status.phase=Running"):
+        owners = {o["kind"] for o in p["metadata"].get("ownerReferences", [])}
+        if p["spec"].get("nodeName") in control and "DaemonSet" not in owners:
+            errors.append(f"pod {p['metadata']['namespace']}/{p['metadata']['name']} runs on control plane "
+                          f"{p['spec']['nodeName']}")
+    return errors
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--cluster", action="store_true", help="also check the live cluster (read-only)")
+    args = parser.parse_args()
+    config = yaml.safe_load((ROOT / "validate.yaml").read_text())
+    files, mans = yaml_files(), manifests(config)
+    errors = check_parse(files, mans) + check_releases(config)
+    if args.cluster:
+        errors += check_cluster(config, mans)
+    for e in errors:
+        print(f"FAIL {e}")
+    checked = f"{len(files)} YAML files, {len(mans)} manifests, {len(config['releases'])} Helm releases"
+    print(f"{'FAILED' if errors else 'OK'}: {checked}{' and the cluster' if args.cluster else ''}"
+          f"{f', {len(errors)} problems' if errors else ''}")
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

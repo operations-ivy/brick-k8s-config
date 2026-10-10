@@ -40,7 +40,8 @@ import urllib.request
 
 NAMESPACE = "whitepatrick"
 REPOS = ["wigle-sync", "wigle-console", "joke-reader", "joke-importer"]
-NODES = ["192.168.1.183", "192.168.1.170"]  # brick420, brick2000
+# Every k3s node: brick420, brick2000, brick666, brick1982.
+NODES = ["192.168.1.183", "192.168.1.170", "192.168.1.171", "192.168.1.222"]
 SSH_USER = "zaphod"
 HUB = "https://hub.docker.com/v2"
 VERSION = re.compile(r"^\d+(\.\d+)*$")

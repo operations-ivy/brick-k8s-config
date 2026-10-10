@@ -423,6 +423,31 @@ Pis:
   `/etc/logrotate.d/` entries on `brick2000` (e.g. `prometheus-node-exporter`,
   from its apt package) are unrelated to this and were left alone.
 
+## Checking changes before they reach the cluster
+
+```bash
+scripts/validate             # static: parse, render every chart, unknown values keys
+scripts/validate --cluster   # also read-only checks against the live cluster
+python3 -m unittest discover -s tests -v   # unit tests for scripts/
+```
+
+`validate.yaml` lists each Helm release at the chart version running on the
+cluster, with its values file. `scripts/validate` renders each one with
+`helm template`, and flags any values key the chart (with its sub-charts)
+doesn't have: Helm ignores those silently, so a typo, or a key a chart version
+dropped, is a no-op nobody notices. It found six on 2026-10-10, all proven
+no-ops by rendering with and without them, and removed. Blocks the chart
+passes through as free-form config are listed under `freeform`.
+
+With `--cluster` it also runs a server-side dry run and `kubectl diff` of every
+manifest (drift between `main` and the cluster has happened: an applied but
+unmerged commit), compares each release's live values with its file, and
+checks that every Deployment is available, every PodDisruptionBudget allows a
+disruption, and only DaemonSets run on the control plane. `debug/` is
+checked but not expected on the cluster, and `expected_drift` lists diff lines
+that always differ (the Dashboard's CSRF key). Run it before and after a
+change; it exits 1 on any problem.
+
 Everything here is plain `kubectl apply -f` (static manifests) or `helm
 upgrade --install` (things already packaged as a Helm chart) — no Terraform.
 It was tried for the dashboard's namespace/RBAC but dropped as unneeded
