@@ -6,19 +6,8 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  # Served through brick9000's proxy (brick-cicd-config). grafana.local goes
-  # once the wigle console's next image (with the new Grafana link) is out.
+  # Served through brick9000's proxy (brick-cicd-config).
   - host: grafana.brick.nozdormu.cloud
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: kube-prometheus-stack-grafana
-            port:
-              number: 80
-  - host: grafana.local
     http:
       paths:
       - path: /

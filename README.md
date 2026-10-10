@@ -325,34 +325,12 @@ The names resolve on every device, phones included, with nothing to install:
   host table, pointing at `192.168.1.221`. No wildcards there: **a new ingress
   needs a router entry**, as well as its host name in the manifest.
 
-### The last .local name
+### No more .local names
 
-`grafana.local` still answers, because the live wigle console image links to
-it; it goes once the next `wigle-console` image (with the new link) is out.
-`brick420` announces it over mDNS, pointing at itself (192.168.1.183), with an
-`mdns-alias@<name>` systemd unit:
-
-```ini
-# /etc/systemd/system/mdns-alias@.service on brick420
-[Unit]
-Description=Publish %i.local over mDNS, pointing at this node (Traefik ingress)
-After=avahi-daemon.service network-online.target
-Requires=avahi-daemon.service
-
-[Service]
-# -R: no reverse (PTR) record; 192.168.1.183 already reverse-resolves to brick420.local.
-ExecStart=/usr/bin/avahi-publish -a -R %i.local 192.168.1.183
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-To retire it: remove the `grafana.local` rule from `monitoring/grafana-ingress.yaml`,
-then on brick420 `sudo systemctl disable --now mdns-alias@grafana` (and the
-unit file can go too). `wigle.local`, `reader.local`, `prometheus.local` and
-`dashboard.local` are already gone.
+The last one, `grafana.local`, was retired on 2026-10-10 once wigle-console
+0.1.6 linked to `https://grafana.brick.nozdormu.cloud` instead. brick420 no
+longer announces anything over mDNS (its `mdns-alias@.service` unit is gone).
+brick9000 still answers `jenkins.local` with a redirect, from brick-cicd-config.
 
 ## Native arm64 image builds
 
