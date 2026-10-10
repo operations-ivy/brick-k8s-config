@@ -25,13 +25,16 @@ grafana:
     passwordKey: admin-password
   persistence:
     enabled: false
+  # No CPU limit: with no persistence every new pod rebuilds its database and
+  # reinstalls plugins, and at 200m that took longer than the liveness probe
+  # allows on a Pi 4 (brick1982), so the pod was killed in a loop. It idles
+  # well under its request, so it only bursts while starting.
   resources:
     requests:
       memory: 300Mi
       cpu: 100m
     limits:
       memory: 600Mi
-      cpu: 200m
   service:
     type: ClusterIP
   additionalDataSources:
