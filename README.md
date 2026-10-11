@@ -148,14 +148,18 @@ sudo k3s kubectl get nodes -o wide   # INTERNAL-IP is IPv4 only
 
 ## LOCALHOST
 
-Pull the kubeconfig to your workstation:
+Pull the kubeconfig to your workstation, as kubectl's default config (no
+`KUBECONFIG` needed; `jenkins/release` in brick-cicd-config uses it too):
 
 ```bash
 ssh zaphod@<main-node-ip> sudo cat /etc/rancher/k3s/k3s.yaml \
-  | sed "s/127.0.0.1/<main-node-ip>/" > ~/.kube/chuck-config
+  | sed "s/127.0.0.1/<main-node-ip>/" > ~/.kube/config && chmod 600 ~/.kube/config
 
-KUBECONFIG=~/.kube/chuck-config kubectl get nodes
+kubectl get nodes
 ```
+
+(Older notes use `~/.kube/chuck-config`: the same cluster and credentials,
+retired.)
 
 ## Repo layout
 
