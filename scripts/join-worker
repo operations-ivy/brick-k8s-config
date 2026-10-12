@@ -45,7 +45,10 @@ SystemMaxUse={cap}
 
 # USB Wi-Fi dongles known to do monitor mode on 2.4 and 5 GHz with in-kernel
 # drivers (vendor, product). nfd/node-feature-rules.yaml lists the same ones.
-MONITOR_RADIOS = (("0bda", "c811"),)  # Realtek RTL8821CU (rtw88_8821cu)
+MONITOR_RADIOS = (
+    ("0bda", "b812"),  # Realtek RTL8822BU (rtw88_8822bu), 2x2, the one in brick666
+    ("0bda", "c811"),  # Realtek RTL8821CU (rtw88_8821cu)
+)
 UDEV_RULES = "/etc/udev/rules.d/70-wlmon.rules"
 NM_UNMANAGED = "/etc/NetworkManager/conf.d/99-unmanaged-wlmon.conf"
 

@@ -13,5 +13,5 @@ spec:
     matchFeatures:
     - feature: usb.device
       matchExpressions:
-        vendor: {op: In, value: ["0bda"]}   # Realtek
-        device: {op: In, value: ["c811"]}   # RTL8821CU
+        vendor: {op: In, value: ["0bda"]}           # Realtek
+        device: {op: In, value: ["b812", "c811"]}   # RTL8822BU, RTL8821CU
