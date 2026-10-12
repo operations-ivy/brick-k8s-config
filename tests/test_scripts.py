@@ -118,6 +118,14 @@ class JoinWorkerTests(unittest.TestCase):
         self.assertEqual(out, join_worker.with_node_ip(out, "192.0.2.5"))  # idempotent
         self.assertTrue(join_worker.with_node_ip("", "192.0.2.5").startswith("# IPv4 only"))
 
+    def test_radio_rules_name_each_known_dongle_and_unmanage_it(self):
+        rules = join_worker.radio_rules()
+        udev, nm = rules[join_worker.UDEV_RULES], rules[join_worker.NM_UNMANAGED]
+        for vendor, product in join_worker.MONITOR_RADIOS:
+            self.assertIn(f'ATTRS{{idVendor}}=="{vendor}", ATTRS{{idProduct}}=="{product}", NAME="wlmon0"', udev)
+        self.assertIn("unmanaged-devices=interface-name:wlmon*", nm)
+        self.assertTrue(udev.endswith("\n") and nm.endswith("\n"))
+
 
 def workload(kind, ns, name, claims=(), templates=False):
     w = {"kind": kind, "metadata": {"namespace": ns, "name": name},

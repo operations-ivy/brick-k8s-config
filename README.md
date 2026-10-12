@@ -280,6 +280,24 @@ retired.)
 
 - `debug/` — a node-problem-detector `DaemonSet` for `kube-system`.
 
+- `nfd/` — [Node Feature Discovery](https://github.com/kubernetes-sigs/node-feature-discovery),
+  **installed** (2026-10-12), for one job: label whichever node has a
+  monitor-mode Wi-Fi dongle plugged in, `feature.node.kubernetes.io/wifi-monitor=true`
+  (`nfd/node-feature-rules.yaml`), so a capture DaemonSet follows the dongle
+  between nodes within about a minute. It discovers only USB and applies only
+  that rule, so nodes don't collect NFD's default labels. The master stays
+  off brick420. The dongle's USB ID is also in `scripts/join-worker`
+  (`MONITOR_RADIOS`), which names it `wlmon0` and keeps NetworkManager off it.
+  Install:
+
+  ```bash
+  kubectl apply -f nfd/nfd-namespace.yaml
+  helm repo add nfd https://kubernetes-sigs.github.io/node-feature-discovery/charts
+  helm upgrade --install node-feature-discovery nfd/node-feature-discovery --version 0.19.0 \
+    --namespace node-feature-discovery -f nfd/nfd-values.yaml
+  kubectl apply -f nfd/node-feature-rules.yaml
+  ```
+
 - `traefik/` — overrides for the Traefik k3s installs itself, as a
   `HelmChartConfig` that k3s's Helm controller merges into its chart: two
   replicas spread across the workers (never brick420), with a `PodDisruptionBudget` (`minAvailable:

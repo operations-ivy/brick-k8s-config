@@ -1,0 +1,17 @@
+# feature.node.kubernetes.io/wifi-monitor=true on any node with a known
+# monitor-mode Wi-Fi dongle plugged in. Keep this list in step with
+# MONITOR_RADIOS in scripts/join-worker, which names the dongle wlmon0.
+apiVersion: nfd.k8s-sigs.io/v1alpha1
+kind: NodeFeatureRule
+metadata:
+  name: wifi-monitor
+spec:
+  rules:
+  - name: monitor-mode Wi-Fi dongle
+    labels:
+      wifi-monitor: "true"
+    matchFeatures:
+    - feature: usb.device
+      matchExpressions:
+        vendor: {op: In, value: ["0bda"]}   # Realtek
+        device: {op: In, value: ["c811"]}   # RTL8821CU
