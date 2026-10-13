@@ -199,7 +199,7 @@ retired.)
   kubectl apply -f monitoring/monitoring-namespace.yaml
   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
   helm repo update
-  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack --version 91.5.0 \
     --namespace monitoring -f monitoring/kube-prometheus-stack/kube-prometheus-stack-values.yaml
   ```
 
