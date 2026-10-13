@@ -13,9 +13,12 @@ zaphod with key login and passwordless sudo on <host>. It does the README's
 3. node-ip pinned to the host's IPv4 address in /etc/rancher/k3s/config.yaml
    (added to an existing file, never replacing it)
 4. persistent journald, 4 days, size-capped by disk type
-5. the k3s agent at the cluster's exact version, with the join token piped
+5. monitor-radio rules: a known monitor-mode Wi-Fi dongle, plugged in here
+   now or later, is named wlmon0 and left alone by NetworkManager, for
+   overwatch's Wi-Fi capture (Node Feature Discovery labels the node)
+6. the k3s agent at the cluster's exact version, with the join token piped
    from the control plane over SSH, never printed or written here
-6. wait for Ready, then check node-exporter, promtail and svclb run on it
+7. wait for Ready, then check node-exporter, promtail and svclb run on it
 
 Exits 1 if any step or check fails.
 """
@@ -38,6 +41,28 @@ Storage=persistent
 MaxRetentionSec=4day
 SystemMaxUse={cap}
 """
+
+
+# USB Wi-Fi dongles known to do monitor mode on 2.4 and 5 GHz with in-kernel
+# drivers (vendor, product). nfd/node-feature-rules.yaml lists the same ones.
+MONITOR_RADIOS = (
+    ("0bda", "b812"),  # Realtek RTL8822BU (rtw88_8822bu), 2x2, the one in brick666
+    ("0bda", "c811"),  # Realtek RTL8821CU (rtw88_8821cu)
+)
+UDEV_RULES = "/etc/udev/rules.d/70-wlmon.rules"
+NM_UNMANAGED = "/etc/NetworkManager/conf.d/99-unmanaged-wlmon.conf"
+
+
+def radio_rules() -> dict[str, str]:
+    """The files that name a monitor dongle wlmon0 and keep NetworkManager
+    (which would scan on it and fight monitor mode) away from it."""
+    udev = "# Monitor-mode Wi-Fi dongles for overwatch (brick-k8s-config scripts/join-worker).\n"
+    for vendor, product in MONITOR_RADIOS:
+        udev += (f'SUBSYSTEM=="net", ACTION=="add", ATTRS{{idVendor}}=="{vendor}", '
+                 f'ATTRS{{idProduct}}=="{product}", NAME="wlmon0"\n')
+    nm = "# overwatch's Wi-Fi capture owns these (brick-k8s-config scripts/join-worker).\n" \
+         "[keyfile]\nunmanaged-devices=interface-name:wlmon*\n"
+    return {UDEV_RULES: udev, NM_UNMANAGED: nm}
 
 
 class Step(Exception):
@@ -132,6 +157,21 @@ def join(host: str, dry: bool, say) -> None:
             ssh(host, "sudo install -d /etc/systemd/journald.conf.d && "
                       "sudo tee /etc/systemd/journald.conf.d/retention.conf >/dev/null && "
                       "sudo systemctl restart systemd-journald", input=want)
+
+    stale = [path for path, want in radio_rules().items()
+             if ssh(host, f"cat {path} 2>/dev/null || true") != want]
+    if not stale:
+        say("monitor-radio rules: already set")
+    else:
+        say("monitor-radio rules: " + ", ".join(stale))
+        if not dry:
+            for path in stale:
+                ssh(host, f"sudo install -d {path.rsplit('/', 1)[0]} && sudo tee {path} >/dev/null",
+                    input=radio_rules()[path])
+            # Apply now: reload both, and rename a dongle that's already in (it's
+            # down, since NetworkManager hasn't been using it).
+            ssh(host, "sudo udevadm control --reload && sudo systemctl reload NetworkManager && "
+                      "for d in /sys/class/net/wl*; do [ -e \"$d\" ] && sudo udevadm trigger -c add \"$d\"; done; true")
 
     installed = ssh(host, "k3s --version 2>/dev/null | head -1 || true")
     active = run(["ssh", "-o", "BatchMode=yes", f"{USER}@{host}", "systemctl is-active -q k3s-agent"]).returncode == 0

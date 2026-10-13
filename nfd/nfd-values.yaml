@@ -1,0 +1,54 @@
+# Node Feature Discovery, here for one job: label whichever node has a
+# monitor-mode Wi-Fi dongle plugged in (nfd/node-feature-rules.yaml), so
+# overwatch's Wi-Fi capture DaemonSet follows the dongle from node to node.
+# Only USB is discovered and only our rules label, so nodes don't fill up with
+# NFD's hundreds of default feature labels.
+
+master:
+  # The chart prefers the control plane and tolerates its taint; brick420
+  # runs only DaemonSets (docs: placement), so neither.
+  tolerations: []
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+          - key: chuck.io/storage-node
+            operator: NotIn
+            values: ["true"]
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      memory: 256Mi
+
+worker:
+  config:
+    core:
+      # Each node is rescanned every minute: a dongle moved between nodes is
+      # relabelled within about a minute.
+      sleepInterval: 60s
+      featureSources: [usb]
+      # "custom" with no custom rules here: no built-in labels at all. The
+      # NodeFeatureRule objects still label.
+      labelSources: [custom]
+    sources:
+      usb:
+        # Vendor-specific (ff) is where Wi-Fi dongles report themselves.
+        deviceClassWhitelist: ["ff"]
+  resources:
+    requests:
+      cpu: 5m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+gc:
+  resources:
+    requests:
+      cpu: 5m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
