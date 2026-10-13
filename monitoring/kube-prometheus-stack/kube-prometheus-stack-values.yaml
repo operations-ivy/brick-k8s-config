@@ -81,6 +81,25 @@ nodeExporter:
 
 prometheus-node-exporter:
   hostNetwork: true
+  # The chart's two filesystem excludes (setting extraArgs replaces them), plus
+  # the systemd collector: each node's system services and timers, through the
+  # host's D-Bus socket. It feeds the chart's NodeSystemdServiceFailed and
+  # NodeSystemdServiceCrashlooping alerts (restarts metrics) and
+  # node_systemd_timer_last_trigger_seconds. The exporter's uid (65534) is
+  # "nobody" on every node, so D-Bus accepts it (gotchas.md, overwatch).
+  # System units only: user units (brick-arena) need brick-cicd-config#68.
+  extraArgs:
+    - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+    - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
+    - --collector.systemd
+    - --collector.systemd.enable-restarts-metrics
+    - --collector.systemd.unit-include=.+\.(service|timer)
+  extraHostVolumeMounts:
+    - name: dbus
+      hostPath: /run/dbus/system_bus_socket
+      type: Socket
+      mountPath: /var/run/dbus/system_bus_socket
+      readOnly: true
   service:
     port: 19100
     targetPort: 19100
