@@ -22,6 +22,10 @@ resources:
 # Only OTLP in — jaeger/zipkin receiver ports are disabled below since
 # nothing sends those protocols here.
 ports:
+  # The collector's own metrics (spans accepted, refused, sent to Tempo),
+  # scraped by the ServiceMonitor below.
+  metrics:
+    enabled: true
   jaeger-compact:
     enabled: false
   jaeger-thrift:
@@ -30,6 +34,9 @@ ports:
     enabled: false
   zipkin:
     enabled: false
+
+serviceMonitor:
+  enabled: true
 
 config:
   receivers:

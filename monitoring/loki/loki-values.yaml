@@ -54,7 +54,8 @@ test:
 minio:
   enabled: false
 monitoring:
+  # Loki's own metrics (ingestion, queries, the compactor's retention runs).
   serviceMonitor:
-    enabled: false
+    enabled: true
   selfMonitoring:
     enabled: false

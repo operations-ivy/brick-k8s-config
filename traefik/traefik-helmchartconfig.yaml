@@ -13,6 +13,15 @@ spec:
   valuesContent: |-
     deployment:
       replicas: 2
+    # Requests, durations and bytes per entrypoint, router and backend
+    # service, for Prometheus (a metrics Service and a ServiceMonitor).
+    metrics:
+      prometheus:
+        addRoutersLabels: true
+        service:
+          enabled: true
+        serviceMonitor:
+          enabled: true
     podDisruptionBudget:
       enabled: true
       minAvailable: 1

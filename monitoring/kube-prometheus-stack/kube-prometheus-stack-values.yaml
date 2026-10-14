@@ -134,6 +134,36 @@ prometheus:
     # Jenkins (brick-cicd-config's jenkins/) brings its own ServiceMonitor, as
     # job="jenkins", the job name it had while it ran on brick9000.
     replicas: 1
+    # Hosts outside the cluster (brick-cicd-config README, "Metrics"):
+    # brick9000's node-exporter and Caddy, brick-status through the proxy (it
+    # listens on localhost there), and brick-arena on brick1982's host. The
+    # `instance` is the host's name, as node_uname_info's nodename.
+    additionalScrapeConfigs:
+      - job_name: brick9000-node
+        static_configs:
+          - targets: ["192.168.1.221:9100"]
+            labels: {instance: brick9000}
+      - job_name: caddy
+        static_configs:
+          - targets: ["192.168.1.221:9180"]
+            labels: {instance: brick9000}
+      - job_name: brick-status
+        scheme: https
+        static_configs:
+          - targets: ["status.brick.nozdormu.cloud"]
+            labels: {instance: brick9000}
+      - job_name: brick-arena
+        static_configs:
+          - targets: ["192.168.1.222:8766"]
+            labels: {instance: brick1982}
+    # brick69 goes wardriving, out of reach for hours: a Prometheus agent on it
+    # keeps scraping and remote-writes the backlog once it's home (wigle-sync's
+    # pi/setup-metrics.sh), through prometheus.brick.nozdormu.cloud. The
+    # out-of-order window lets that backlog in, up to a day old. Anyone on the
+    # LAN can write series this way, as anyone there can already read them.
+    enableRemoteWriteReceiver: true
+    tsdb:
+      outOfOrderTimeWindow: 24h
     # On the NVMe worker like Loki/Tempo, not brick420's SD card: TSDB churn
     # is exactly the write pattern that wears SD cards out, and local-path
     # volumes can't be resized in place, so size for growth up front.
@@ -187,3 +217,26 @@ additionalPrometheusRulesMap:
               severity: warning
             annotations:
               summary: "brick-units hasn't reported from {{ $labels.instance }} for over 10 minutes"
+  # Every host syncs its clock over the internet (timesyncd); brick69 also
+  # from its GPS. No local time server: a pod can't set its host's clock, and
+  # the nodes need the right time before k3s starts. These catch a host that
+  # stops syncing. brick69's samples arrive late (remote write), so its
+  # alerts fire late too.
+  brick-time:
+    groups:
+      - name: brick-time
+        rules:
+          - alert: BrickClockNotSynced
+            expr: node_timex_sync_status == 0
+            for: 30m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.instance }}'s clock hasn't synced for 30 minutes"
+          - alert: BrickClockOffset
+            expr: abs(node_timex_offset_seconds) > 0.5
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.instance }}'s clock is {{ $value | humanizeDuration }} off"
