@@ -94,6 +94,8 @@ prometheus-node-exporter:
     - --collector.systemd
     - --collector.systemd.enable-restarts-metrics
     - --collector.systemd.unit-include=.+\.(service|timer)
+    # Every node is on Wi-Fi: signal, bitrate and retries to the router.
+    - --collector.wifi
     # Hosts' own reports: brick1982's brick-units.timer (brick-cicd-config)
     # writes failed user units here, which the systemd collector can't see.
     - --collector.textfile.directory=/host/textfile
