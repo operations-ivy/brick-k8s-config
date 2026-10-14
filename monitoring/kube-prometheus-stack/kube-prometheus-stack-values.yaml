@@ -94,11 +94,19 @@ prometheus-node-exporter:
     - --collector.systemd
     - --collector.systemd.enable-restarts-metrics
     - --collector.systemd.unit-include=.+\.(service|timer)
+    # Hosts' own reports: brick1982's brick-units.timer (brick-cicd-config)
+    # writes failed user units here, which the systemd collector can't see.
+    - --collector.textfile.directory=/host/textfile
   extraHostVolumeMounts:
     - name: dbus
       hostPath: /run/dbus/system_bus_socket
       type: Socket
       mountPath: /var/run/dbus/system_bus_socket
+      readOnly: true
+    - name: textfile
+      hostPath: /var/lib/node-exporter-textfile
+      type: DirectoryOrCreate
+      mountPath: /host/textfile
       readOnly: true
   service:
     port: 19100
@@ -157,3 +165,25 @@ kube-state-metrics:
     limits:
       memory: 100Mi
       cpu: 100m
+
+# Our own alert rules. brick9000's board shows the same problems directly
+# (brick-cicd-config, brick_status/units.py); these are for Alertmanager.
+additionalPrometheusRulesMap:
+  brick-units:
+    groups:
+      - name: brick-units
+        rules:
+          - alert: BrickUnitProblem
+            expr: brick_systemd_unit_problem == 1
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.unit }} ({{ $labels.scope }}) on {{ $labels.instance }}: {{ $labels.problem }}"
+          - alert: BrickUnitReportStale
+            expr: time() - brick_systemd_report_timestamp_seconds > 600
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "brick-units hasn't reported from {{ $labels.instance }} for over 10 minutes"
