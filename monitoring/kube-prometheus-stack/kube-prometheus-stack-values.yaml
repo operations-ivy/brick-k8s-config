@@ -248,3 +248,27 @@ additionalPrometheusRulesMap:
               severity: warning
             annotations:
               summary: "{{ $labels.instance }}'s clock is {{ $value | humanizeDuration }} off"
+  # SoC temperature on every host. brick666's case fan was never switched on
+  # (2026-10-15) and it idled at ~80 °C for a week unnoticed; its fan has no
+  # tach wire, so temperature is the only sign the fan has died. Pis
+  # soft-throttle at 80 °C. Over the 14 days before this, the hottest
+  # 15-minute stretch on any healthy host was 65.7 °C (brick9000). node-exporter
+  # can briefly have two series per host after a restart, hence max by.
+  brick-temperature:
+    groups:
+      - name: brick-temperature
+        rules:
+          - alert: BrickNodeHot
+            expr: max by (instance) (node_hwmon_temp_celsius{chip="thermal_thermal_zone0"}) > 70
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "{{ $labels.instance }} has been above 70 °C for 15 minutes ({{ $value | printf \"%.1f\" }} °C): check its fan"
+          - alert: BrickNodeThrottling
+            expr: max by (instance) (node_hwmon_temp_celsius{chip="thermal_thermal_zone0"}) > 80
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "{{ $labels.instance }} is at {{ $value | printf \"%.1f\" }} °C, past the Pi's 80 °C throttle point"
