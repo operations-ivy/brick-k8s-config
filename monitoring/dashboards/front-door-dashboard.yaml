@@ -689,7 +689,7 @@ data:
         {
           "type": "timeseries",
           "title": "Upstream health",
-          "description": "1 while Caddy considers a backend healthy (Traefik on brick420/brick2000, brick-status, brick-arena).",
+          "description": "1 while Caddy considers a backend healthy (Traefik on brick420/brick2000, brick-status).",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
