@@ -1,8 +1,7 @@
 # brick-k8s-config
 
 Cluster-level infrastructure for the k3s cluster running on 3 Raspberry Pi
-5s and a Pi 4 (`brick420` control-plane; `brick2000`, `brick666` and
-`brick1982` workers). Anything specific to the
+5s (`brick420` control-plane; `brick2000` and `brick666` workers). Anything specific to the
 `chucks-wisdom` app itself (Postgres, reader, importer) lives in that repo,
 not here — this repo covers the cluster and would stay useful even if a
 different app replaced chuck.
@@ -83,29 +82,24 @@ cordon the other nodes, `kubectl rollout restart` the chosen deployments, and
 uncordon. Leave the pods with local-path volumes where they are.
 
 `brick666` (the former wardriving Pi 5, SD card) joined this way on
-2026-10-08, and `brick1982` (a Pi 4 8GB, SD card, with the 7" touchscreen) on
-2026-10-10. Some of the old k3s add-ons (CoreDNS, local-path-provisioner,
+2026-10-08. Some of the old k3s add-ons (CoreDNS, local-path-provisioner,
 Traefik) tolerate the control-plane taint, so cordon `brick420` too when
 moving them, or they land there.
 
-brick1982 differs from the Pi 5 workers in two ways, set by hand:
+### Removing a node
 
-- **It runs a kiosk outside Kubernetes** (cage and Chromium for brick-arena,
-  see brick-cicd-config). Its `/etc/rancher/k3s/config.yaml` reserves room
-  for that, so the scheduler doesn't hand it to pods, and `k3s-agent` was
-  restarted after (running pods carry on):
+`brick1982` (a Pi 4 with a touchscreen) was a worker from 2026-10-10 to
+2026-10-14, then left to be a display only. To take a node out:
 
-  ```yaml
-  kubelet-arg:
-    - "system-reserved=cpu=500m,memory=1Gi"
-  ```
-
-- **Its cores are slower** (Cortex-A72, about a third of a Pi 5's per core),
-  which Kubernetes can't see: `100m` is `100m` on any node. It's labelled
-  `chuck.io/cpu=pi4` (`kubectl label node brick1982 chuck.io/cpu=pi4`) so a
-  CPU-hungry pod can prefer the Pi 5s with a node affinity. Nothing uses the
-  label yet; tight CPU limits are the thing to watch (Grafana's 200m one
-  crash-looped it there, see `monitoring/`).
+1. Move anything pinned to it first (a `nodeSelector` on its hostname: the
+   overwatch scanner was), or the drain leaves it Pending.
+2. `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`. The
+   PodDisruptionBudgets keep one replica of each two-replica app up.
+3. `kubectl delete node <node>`, then on the host
+   `sudo /usr/local/bin/k3s-agent-uninstall.sh`.
+4. Take it out of `scripts/prune_images.py`'s `NODES`. If the host stays,
+   give it its own node-exporter and a static scrape job (as brick9000 and
+   brick1982 have, in kube-prometheus-stack's values) so it's still measured.
 
 ## Keep workloads off the control plane
 

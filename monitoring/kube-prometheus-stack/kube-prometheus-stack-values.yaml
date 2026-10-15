@@ -96,8 +96,9 @@ prometheus-node-exporter:
     - --collector.systemd.unit-include=.+\.(service|timer)
     # Every node is on Wi-Fi: signal, bitrate and retries to the router.
     - --collector.wifi
-    # Hosts' own reports: brick1982's brick-units.timer (brick-cicd-config)
-    # writes failed user units here, which the systemd collector can't see.
+    # Hosts' own reports, for whatever a node writes here (brick1982's
+    # brick-units.timer did until it left the cluster; it now has its own
+    # node-exporter, scraped as brick1982-node below).
     - --collector.textfile.directory=/host/textfile
   extraHostVolumeMounts:
     - name: dbus
@@ -138,7 +139,7 @@ prometheus:
     replicas: 1
     # Hosts outside the cluster (brick-cicd-config README, "Metrics"):
     # brick9000's node-exporter and Caddy, brick-status through the proxy (it
-    # listens on localhost there), and brick-arena on brick1982's host. The
+    # listens on localhost there), and brick1982's node-exporter and brick-arena. The
     # `instance` is the host's name, as node_uname_info's nodename.
     additionalScrapeConfigs:
       - job_name: brick9000-node
@@ -154,6 +155,10 @@ prometheus:
         static_configs:
           - targets: ["status.brick.nozdormu.cloud"]
             labels: {instance: brick9000}
+      - job_name: brick1982-node
+        static_configs:
+          - targets: ["192.168.1.222:9100"]
+            labels: {instance: brick1982}
       - job_name: brick-arena
         static_configs:
           - targets: ["192.168.1.222:8766"]
