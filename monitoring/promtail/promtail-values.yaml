@@ -9,3 +9,7 @@ resources:
   limits:
     memory: 128Mi
     cpu: 100m
+
+# Promtail's own metrics: lines read and sent per file, send errors.
+serviceMonitor:
+  enabled: true

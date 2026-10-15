@@ -1,0 +1,885 @@
+# Grafana dashboard: every host with a node-exporter, the cluster's nodes and
+# brick9000 and brick69 too (the built-in node dashboards only list the
+# cluster's own node-exporter job).
+#   kubectl apply -f monitoring/dashboards/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: brick-hosts-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  brick-hosts-dashboard.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {
+              "type": "grafana",
+              "uid": "-- Grafana --"
+            },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "type": "row",
+          "title": "Every host: the cluster's nodes, brick9000 and brick69 (when it's home, or after it gets back)",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1
+        },
+        {
+          "type": "table",
+          "title": "Hosts",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "node_uname_info{nodename=~\"$host\"}",
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "Value": true,
+                  "domainname": true,
+                  "endpoint": true,
+                  "namespace": true,
+                  "pod": true,
+                  "service": true,
+                  "container": true,
+                  "sysname": true
+                },
+                "renameByName": {
+                  "nodename": "host",
+                  "release": "kernel"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm"
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 24,
+            "x": 0,
+            "y": 1
+          },
+          "id": 2
+        },
+        {
+          "type": "timeseries",
+          "title": "CPU busy",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * (1 - avg by (instance, job) (rate(node_cpu_seconds_total{mode=\"idle\"}[2m]))) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "max": 100
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 7
+          },
+          "id": 3
+        },
+        {
+          "type": "timeseries",
+          "title": "Memory used",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "max": 100
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 7
+          },
+          "id": 4
+        },
+        {
+          "type": "timeseries",
+          "title": "CPU temperature",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "max by (instance, job) (node_thermal_zone_temp) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "celsius",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 15
+          },
+          "id": 5
+        },
+        {
+          "type": "timeseries",
+          "title": "Root disk used",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "100 * (1 - node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"}) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "max": 100
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 15
+          },
+          "id": 6
+        },
+        {
+          "type": "timeseries",
+          "title": "Network (Wi-Fi and Ethernet)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (instance, job) (rate(node_network_receive_bytes_total{device=~\"wlan.*|eth.*|end.*\"}[2m]) + rate(node_network_transmit_bytes_total{device=~\"wlan.*|eth.*|end.*\"}[2m])) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 23
+          },
+          "id": 7
+        },
+        {
+          "type": "timeseries",
+          "title": "Load (1m) per core",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "node_load1 / on (instance, job) count by (instance, job) (node_cpu_seconds_total{mode=\"idle\"}) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 23
+          },
+          "id": 8
+        },
+        {
+          "type": "timeseries",
+          "title": "Disk writes",
+          "description": "SD cards wear with writes: brick420, brick666, brick1982, brick9000 and brick69 run on them.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (instance, job) (rate(node_disk_written_bytes_total[5m])) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "Bps",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 31
+          },
+          "id": 9
+        },
+        {
+          "type": "timeseries",
+          "title": "Wi-Fi signal",
+          "description": "Only where node-exporter's wifi collector is on.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "node_wifi_station_signal_dbm * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}} {{device}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "dBm",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": null
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 31
+          },
+          "id": 10
+        },
+        {
+          "type": "table",
+          "title": "Failed systemd units",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "(node_systemd_unit_state{state=\"failed\"} == 1) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true,
+                  "Value": true,
+                  "instance": true,
+                  "job": true,
+                  "endpoint": true,
+                  "namespace": true,
+                  "pod": true,
+                  "service": true,
+                  "container": true,
+                  "state": true,
+                  "type": true
+                },
+                "renameByName": {
+                  "nodename": "host",
+                  "name": "unit"
+                }
+              }
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 39
+          },
+          "id": 11
+        },
+        {
+          "type": "timeseries",
+          "title": "Unit restarts",
+          "description": "Per hour, units systemd restarted.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (instance, job, name) (increase(node_systemd_service_restart_total[1h])) * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"} > 0",
+              "legendFormat": "{{nodename}} {{name}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 39
+          },
+          "id": 12
+        },
+        {
+          "type": "timeseries",
+          "title": "Uptime",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "time() - node_boot_time_seconds * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": 0
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          },
+          "id": 13
+        },
+        {
+          "type": "timeseries",
+          "title": "Time offset",
+          "description": "How far each clock is from its time source. brick69 has no RTC: GPS and NTP keep it right.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "node_timex_offset_seconds * on (instance, job) group_left (nodename) node_uname_info{nodename=~\"$host\"}",
+              "legendFormat": "{{nodename}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 15,
+                "showPoints": "never",
+                "spanNulls": false,
+                "lineInterpolation": "smooth",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisSoftMin": null
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 12,
+            "x": 12,
+            "y": 46
+          },
+          "id": 14
+        }
+      ],
+      "refresh": "1m",
+      "schemaVersion": 41,
+      "tags": [
+        "hosts",
+        "brick9000",
+        "brick69"
+      ],
+      "templating": {
+        "list": [
+          {
+            "name": "host",
+            "label": "Host",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "refresh": 2,
+            "query": {
+              "query": "label_values(node_uname_info, nodename)",
+              "refId": "A"
+            },
+            "definition": "label_values(node_uname_info, nodename)",
+            "includeAll": true,
+            "multi": true,
+            "current": {
+              "selected": true,
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            },
+            "sort": 1
+          }
+        ]
+      },
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Brick hosts: every node-exporter",
+      "uid": "brick-hosts",
+      "version": 1
+    }
