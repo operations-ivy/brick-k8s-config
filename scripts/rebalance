@@ -2,7 +2,7 @@
 """Spread stateless pods onto a node (by default the newest).
 
     scripts/rebalance                 # onto the newest node
-    scripts/rebalance brick1982       # onto a given node
+    scripts/rebalance brick666        # onto a given node
     scripts/rebalance --dry-run       # only show the plan
     scripts/rebalance --all           # include coredns and traefik too
 
