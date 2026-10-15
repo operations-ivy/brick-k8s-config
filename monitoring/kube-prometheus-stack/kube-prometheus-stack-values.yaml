@@ -87,7 +87,7 @@ prometheus-node-exporter:
   # NodeSystemdServiceCrashlooping alerts (restarts metrics) and
   # node_systemd_timer_last_trigger_seconds. The exporter's uid (65534) is
   # "nobody" on every node, so D-Bus accepts it (gotchas.md, overwatch).
-  # System units only: user units (brick-arena) need brick-cicd-config#68.
+  # System units only: user units need brick-cicd-config#68.
   extraArgs:
     - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
     - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
@@ -139,7 +139,7 @@ prometheus:
     replicas: 1
     # Hosts outside the cluster (brick-cicd-config README, "Metrics"):
     # brick9000's node-exporter and Caddy, brick-status through the proxy (it
-    # listens on localhost there), and brick1982's node-exporter and brick-arena. The
+    # listens on localhost there), and brick1982's node-exporter and LCARS panel. The
     # `instance` is the host's name, as node_uname_info's nodename.
     additionalScrapeConfigs:
       - job_name: brick9000-node
@@ -159,9 +159,10 @@ prometheus:
         static_configs:
           - targets: ["192.168.1.222:9100"]
             labels: {instance: brick1982}
-      - job_name: brick-arena
+      # The LCARS panel (operations-ivy/rpi_lcars), which replaced brick-arena.
+      - job_name: lcars
         static_configs:
-          - targets: ["192.168.1.222:8766"]
+          - targets: ["192.168.1.222:8767"]
             labels: {instance: brick1982}
     # brick69 goes wardriving, out of reach for hours: a Prometheus agent on it
     # keeps scraping and remote-writes the backlog once it's home (wigle-sync's
