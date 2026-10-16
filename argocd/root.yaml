@@ -1,0 +1,24 @@
+# The root of the app of apps (brick-k8s-config#42): one Application per
+# workload lives in argocd/apps/, and this one keeps that list in sync with
+# main. Applied once by hand at bootstrap (README "Argo CD"); after that a
+# new file in apps/ is all it takes to add an app.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+    targetRevision: main
+    path: argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      # Removing a file from apps/ removes its Application (not, by itself,
+      # the app's objects: each Application has no finalizer).
+      prune: true
+      selfHeal: true

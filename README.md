@@ -461,6 +461,46 @@ Pis:
   `/etc/logrotate.d/` entries on `brick2000` (e.g. `prometheus-node-exporter`,
   from its apt package) are unrelated to this and were left alone.
 
+## Argo CD (GitOps)
+
+Argo CD deploys the cluster's workloads from git (#42), at
+`https://argocd.brick.nozdormu.cloud` (local `admin`; the password is in
+KeePass). `argocd/`:
+
+- `argocd-values.yaml`: the chart's values. Non-HA, no SSO, no
+  ApplicationSets, no notifications (alerts come from Prometheus).
+- `root.yaml`: the app of apps. It keeps `argocd/apps/` on `main` in sync,
+  one `Application` per workload there.
+- `apps/argocd.yaml`: Argo CD managing its own install (chart pinned there
+  and in `validate.yaml`).
+
+The admin password hash and the server key are `argocd-secret`, a
+SealedSecret in brick-k8s-secrets (`argocd/`), so the chart doesn't create
+that Secret.
+
+### Bootstrap (once, or rebuilding the cluster)
+
+```bash
+kubectl apply -f argocd/argocd-namespace.yaml
+kubectl apply -f ../brick-k8s-secrets/argocd/argocd-secret-sealedsecret.yaml
+helm repo add argo https://argoproj.github.io/argo-helm
+helm upgrade --install argocd argo/argo-cd --version 10.10.5 \
+  --namespace argocd -f argocd/argocd-values.yaml
+kubectl apply -f argocd/root.yaml
+```
+
+From then on, Argo CD manages its own install and every app in `apps/`.
+To change the admin password, seal a new `argocd-secret` (bcrypt hash in
+`admin.password`, a fresh `admin.passwordMtime`, the same or a new
+`server.secretkey`).
+
+### Moving an app in
+
+Add `argocd/apps/<app>.yaml` without `automated` sync, merge it, and check
+the app shows **Synced** with no diff against what's live. Then turn on
+`automated` (with `prune` and `selfHeal`) in a second PR. After that, a merge
+is a deploy, and a change made by hand is put back.
+
 ## Checking changes before they reach the cluster
 
 ```bash

@@ -1,0 +1,30 @@
+# Argo CD manages its own install: the chart pinned here, the values from
+# git. Bump the chart here and in validate.yaml together.
+#
+# Manual sync until it has shown no diff against the bootstrap install
+# (brick-k8s-config#42: automated sync app by app, the quiet ones first).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-cd
+      targetRevision: 10.10.5
+      helm:
+        releaseName: argocd
+        valueFiles:
+          - $values/argocd/argocd-values.yaml
+    - repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    syncOptions:
+      # The CRDs are too big for client-side apply's last-applied annotation.
+      - ServerSideApply=true
