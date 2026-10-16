@@ -8,6 +8,14 @@
 
 global:
   domain: argocd.brick.nozdormu.cloud
+  # Stateless, so it prefers the stateless worker (brick666) over the storage
+  # node; soft, so it can still fall back to brick2000.
+  affinity:
+    nodeAffinity:
+      type: soft
+      matchExpressions:
+        - key: chuck.io/storage-node
+          operator: DoesNotExist
 
 configs:
   params:
