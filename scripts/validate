@@ -14,8 +14,9 @@ Static:
 
 --cluster (read-only; KUBECONFIG must point at the cluster):
 - every plain manifest passes `kubectl apply --dry-run=server`
-- drift: `kubectl diff` of every plain manifest, and each release's live
-  values (`helm get values`) against its values file
+- Argo CD (#42): every Application Synced, Healthy, automated and on main,
+  and one for every Helm release; `kubectl diff` only for what Argo CD
+  doesn't manage (validate.yaml's `unmanaged`)
 - health: every Deployment available, every PodDisruptionBudget allowing a
   disruption, and no pod but DaemonSets' on a control-plane node
 - scripts/prune_images.py's NODES lists exactly the cluster's nodes
@@ -129,34 +130,54 @@ def check_releases(config: dict) -> list[str]:
     return errors
 
 
+def argo_problems(apps: list[dict], releases: list[str]) -> list[str]:
+    """Argo CD keeps the cluster on main (#42): each Application must be
+    Synced, Healthy, automated and not on a branch (scripts/trial-branch), and
+    every Helm release in validate.yaml must have one."""
+    errors, names = [], set()
+    for a in apps:
+        name, st = a["metadata"]["name"], a.get("status", {})
+        names.add(name)
+        sync, health = st.get("sync", {}).get("status", "Unknown"), st.get("health", {}).get("status", "Unknown")
+        if sync != "Synced":
+            errors.append(f"argocd app {name}: {sync} (Argo CD's UI shows the diff)")
+        if health != "Healthy":
+            errors.append(f"argocd app {name}: {health}")
+        if "automated" not in (a["spec"].get("syncPolicy") or {}):  # `automated: {}` is on
+            errors.append(f"argocd app {name}: automated sync is off")
+        if (a["metadata"].get("labels") or {}).get("brick-trial") == "true":
+            branch = (a["metadata"].get("annotations") or {}).get("brick-trial-branch", "?")
+            errors.append(f"argocd app {name}: on branch {branch} (scripts/trial-branch {name} main)")
+    errors += [f"helm release {r}: no Argo CD Application of that name" for r in releases if r not in names]
+    return errors
+
+
 def check_cluster(config: dict, mans: list[Path]) -> list[str]:
     errors = []
     optional = tuple(config.get("not_deployed") or [])
-    expected = config.get("expected_drift") or {}
+    unmanaged = tuple(config.get("unmanaged") or [])
     for p in mans:
         rel = p.relative_to(ROOT)
         dry = run(["kubectl", "apply", "--dry-run=server", "-f", str(p)])
         if dry.returncode:
             errors.append(f"{rel}: server dry run fails: {dry.stderr.strip()[:300]}")
             continue
-        if str(rel).startswith(optional):
+        # Argo CD keeps everything else on main; only what it doesn't manage
+        # is diffed here.
+        if str(rel).startswith(optional) or not str(rel).startswith(unmanaged):
             continue
         diff = run(["kubectl", "diff", "-f", str(p)])
         if diff.returncode == 1:
-            allowed = expected.get(str(rel), [])
-            changed = [l for l in diff.stdout.splitlines()
-                       if l[:2] in ("+ ", "- ") and "generation:" not in l
-                       and not any(a in l for a in allowed)]
+            changed = [l for l in diff.stdout.splitlines() if l[:2] in ("+ ", "- ") and "generation:" not in l]
             if changed:
                 errors.append(f"{rel}: differs from the cluster ({len(changed)} lines; `kubectl diff -f {rel}`)")
         elif diff.returncode > 1:
             errors.append(f"{rel}: kubectl diff fails: {diff.stderr.strip()[:300]}")
-    for r in config["releases"]:
-        live = run(["helm", "get", "values", r["name"], "-n", r["namespace"], "-o", "json"])
-        if live.returncode:
-            errors.append(f"{r['name']}: can't read its live values: {live.stderr.strip()}")
-        elif (json.loads(live.stdout) or {}) != (yaml.safe_load((ROOT / r["values"]).read_text()) or {}):
-            errors.append(f"{r['name']}: live values differ from {r['values']} (run its helm upgrade)")
+    apps = run(["kubectl", "-n", "argocd", "get", "applications", "-o", "json"])
+    if apps.returncode:
+        errors.append(f"can't list Argo CD's applications: {apps.stderr.strip()[:200]}")
+    else:
+        errors += argo_problems(json.loads(apps.stdout)["items"], [r["name"] for r in config["releases"]])
     errors += check_health()
     return errors
 

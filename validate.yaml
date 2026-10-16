@@ -24,8 +24,8 @@ freeform:
 not_deployed:
   - debug/
 
-# Diff lines that are expected to differ from the live cluster.
-expected_drift:
-  # The Dashboard writes its own CSRF key into kubernetes-dashboard-csrf at
-  # start; applying the manifest would blank it.
-  dashboard/dashboard.yaml: ["csrf:"]
+# Manifests Argo CD doesn't manage, so --cluster diffs them itself: k3s's own
+# Traefik config stays with k3s (#42). Everything else is an Argo CD
+# Application, and --cluster asks Argo CD whether it matches main.
+unmanaged:
+  - traefik/

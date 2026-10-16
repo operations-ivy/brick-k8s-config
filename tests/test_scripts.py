@@ -90,6 +90,17 @@ class PruneTests(unittest.TestCase):
 
 
 class ValidateTests(unittest.TestCase):
+    def test_argo_problems(self):
+        ok = {"metadata": {"name": "loki"}, "spec": {"syncPolicy": {"automated": {}}},
+              "status": {"sync": {"status": "Synced"}, "health": {"status": "Healthy"}}}
+        self.assertEqual(validate.argo_problems([ok], ["loki"]), [])
+        bad = {"metadata": {"name": "x", "labels": {"brick-trial": "true"}, "annotations": {"brick-trial-branch": "b"}},
+               "spec": {}, "status": {"sync": {"status": "OutOfSync"}, "health": {"status": "Degraded"}}}
+        self.assertEqual(validate.argo_problems([bad], ["loki"]), [
+            "argocd app x: OutOfSync (Argo CD's UI shows the diff)", "argocd app x: Degraded",
+            "argocd app x: automated sync is off", "argocd app x: on branch b (scripts/trial-branch x main)",
+            "helm release loki: no Argo CD Application of that name"])
+
     def test_node_list_drift(self):
         self.assertEqual(validate.node_list_drift(["10.0.0.1", "10.0.0.2"], {"10.0.0.2", "10.0.0.1"}), [])
         self.assertEqual(validate.node_list_drift(["10.0.0.1", "10.0.0.9"], {"10.0.0.1", "10.0.0.2"}),
