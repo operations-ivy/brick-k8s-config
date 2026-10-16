@@ -124,6 +124,24 @@ class JoinWorkerTests(unittest.TestCase):
         self.assertEqual(out, join_worker.with_node_ip(out, "192.0.2.5"))  # idempotent
         self.assertTrue(join_worker.with_node_ip("", "192.0.2.5").startswith("# IPv4 only"))
 
+    def test_case_fan_appends_once_and_replaces_old_values(self):
+        fan = join_worker.CASE_FANS["brick666"]
+        stock = "arm_64bit=1\n[pi5]\ndtoverlay=nospi10\n[all]\n"
+        out = join_worker.with_case_fan(stock, fan)
+        self.assertTrue(out.startswith(stock.rstrip("\n")))
+        self.assertEqual(out.splitlines()[-len(fan):], list(fan))
+        self.assertEqual(join_worker.with_case_fan(out, fan), out)  # idempotent
+        # A different old value is replaced, not duplicated.
+        old = stock + "dtparam=fan_temp0_speed=75\n"
+        self.assertEqual(join_worker.with_case_fan(old, fan).count("fan_temp0_speed"), 1)
+        # Set by hand already (brick666, 2026-10-15): left alone.
+        by_hand = stock + "\n[all]\n" + "\n".join(fan) + "\n"
+        self.assertEqual(join_worker.with_case_fan(by_hand, fan), by_hand)
+        # Under a section that isn't [all], it isn't in effect everywhere: move it.
+        scoped = "[cm5]\n" + "\n".join(fan) + "\n"
+        self.assertTrue(join_worker.with_case_fan(scoped, fan).endswith("\n".join(fan) + "\n"))
+        self.assertIn("[all]", join_worker.with_case_fan(scoped, fan))
+
     def test_radio_rules_name_each_known_dongle_and_unmanage_it(self):
         rules = join_worker.radio_rules()
         udev, nm = rules[join_worker.UDEV_RULES], rules[join_worker.NM_UNMANAGED]

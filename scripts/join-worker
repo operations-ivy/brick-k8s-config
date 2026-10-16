@@ -9,16 +9,19 @@ zaphod with key login and passwordless sudo on <host>. It does the README's
 "AGENT NODE" steps, skipping any already done, so it's safe to re-run:
 
 1. preflight: SSH and passwordless sudo work, arm64
-2. memory cgroups on the kernel command line (reboots and waits if added)
-3. node-ip pinned to the host's IPv4 address in /etc/rancher/k3s/config.yaml
+2. a case fan the firmware doesn't detect (CASE_FANS): its dtparams in
+   config.txt, before step 3 so that reboot applies them; on a re-run they
+   take effect at the next reboot
+3. memory cgroups on the kernel command line (reboots and waits if added)
+4. node-ip pinned to the host's IPv4 address in /etc/rancher/k3s/config.yaml
    (added to an existing file, never replacing it)
-4. persistent journald, 4 days, size-capped by disk type
-5. monitor-radio rules: a known monitor-mode Wi-Fi dongle, plugged in here
+5. persistent journald, 4 days, size-capped by disk type
+6. monitor-radio rules: a known monitor-mode Wi-Fi dongle, plugged in here
    now or later, is named wlmon0 and left alone by NetworkManager, for
    overwatch's Wi-Fi capture (Node Feature Discovery labels the node)
-6. the k3s agent at the cluster's exact version, with the join token piped
+7. the k3s agent at the cluster's exact version, with the join token piped
    from the control plane over SSH, never printed or written here
-7. wait for Ready, then check node-exporter, promtail and svclb run on it
+8. wait for Ready, then check node-exporter, promtail and svclb run on it
 
 Exits 1 if any step or check fails.
 """
@@ -63,6 +66,34 @@ def radio_rules() -> dict[str, str]:
     nm = "# overwatch's Wi-Fi capture owns these (brick-k8s-config scripts/join-worker).\n" \
          "[keyfile]\nunmanaged-devices=interface-name:wlmon*\n"
     return {UDEV_RULES: udev, NM_UNMANAGED: nm}
+
+
+# Hosts whose case fan sits on the Pi 5 FAN header but isn't detected by the
+# firmware, so cooling_fan stays disabled and the fan never runs (brick666
+# idled near 80 °C, 2026-10-15). brick666's has no tach wire, so it always
+# reads 0 RPM; BrickNodeHot catches it dying. Its curve starts at 35 °C, so the
+# fan never stops, at a quiet PWM 100 (the default first level is 75 from
+# 50 °C); the higher levels stay the defaults.
+CASE_FANS = {
+    "brick666": ("dtparam=cooling_fan=on", "dtparam=fan_temp0=35000",
+                 "dtparam=fan_temp0_hyst=5000", "dtparam=fan_temp0_speed=100"),
+}
+FIRMWARE_CONFIG = "/boot/firmware/config.txt"
+
+
+def with_case_fan(config: str, params: tuple[str, ...]) -> str:
+    """config.txt with `params` in a final [all] section, replacing any other
+    setting of the same dtparams. Unchanged if they're already there."""
+    lines = config.rstrip("\n").splitlines()
+    headers = [i for i, l in enumerate(lines) if l.strip().startswith("[")]
+    last = headers[-1] if headers else -1
+    if (last == -1 or lines[last].strip() == "[all]") and all(p in lines[last + 1:] for p in params):
+        return config
+    keys = {p.rsplit("=", 1)[0] for p in params}
+    kept = [l for l in lines if l.strip().rsplit("=", 1)[0] not in keys]
+    comment = "# Case fan the firmware doesn't detect (brick-k8s-config scripts/join-worker)."
+    kept = [l for l in kept if l != comment]
+    return "\n".join(kept + ["", "[all]", comment, *params]) + "\n"
 
 
 class Step(Exception):
@@ -120,6 +151,16 @@ def join(host: str, dry: bool, say) -> None:
         raise Step(f"passwordless sudo doesn't work on {host} (add /etc/sudoers.d/zaphod-nopasswd)")
     version = cluster_version()
 
+    fan = CASE_FANS.get(ssh(host, "hostname").strip())
+    if fan:
+        config = ssh(host, f"cat {FIRMWARE_CONFIG}")
+        if with_case_fan(config, fan) == config:
+            say("case fan: already set")
+        else:
+            say(f"case fan: {', '.join(p.split('=', 1)[1] for p in fan)} in {FIRMWARE_CONFIG}")
+            if not dry:
+                ssh(host, f"sudo cp {FIRMWARE_CONFIG} {FIRMWARE_CONFIG}.bak && sudo tee {FIRMWARE_CONFIG} >/dev/null",
+                    input=with_case_fan(config, fan))
     cmdline = ssh(host, "cat /boot/firmware/cmdline.txt")
     if needs_cgroups(cmdline):
         say("turn on memory cgroups and reboot")
@@ -135,6 +176,8 @@ def join(host: str, dry: bool, say) -> None:
                 raise Step("memory cgroups still off after the reboot")
     else:
         say("memory cgroups: already on")
+        if fan and with_case_fan(config, fan) != config:
+            say("case fan: takes effect at the next reboot")
 
     ip = ssh(host, "ip -4 -o route get 1.1.1.1").split(" src ")[1].split()[0]
     config = ssh(host, "sudo cat /etc/rancher/k3s/config.yaml 2>/dev/null || true")
