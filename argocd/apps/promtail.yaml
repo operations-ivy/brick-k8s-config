@@ -1,7 +1,8 @@
 # The promtail Helm release: chart pinned here, values from git
 # (monitoring/promtail/promtail-values.yaml). Bump the chart here and in validate.yaml together.
 #
-# Manual sync until it has shown no diff against what's live (#42).
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -23,3 +24,7 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

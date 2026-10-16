@@ -14,6 +14,9 @@ serviceMonitor:
 persistentVolume:
   enabled: true
   size: 100Mi
+  # Argo CD never prunes or deletes the data (brick-k8s-config#42).
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
 
 resources:
   requests:

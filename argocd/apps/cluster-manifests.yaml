@@ -4,7 +4,8 @@
 # validate.yaml, debug/ (applied by hand only while debugging), or
 # traefik/ (k3s's own add-on config stays with k3s, #42).
 #
-# Manual sync until it has shown no diff against what's live (#42).
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -31,5 +32,8 @@ spec:
       jsonPointers:
         - /data
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - RespectIgnoreDifferences=true

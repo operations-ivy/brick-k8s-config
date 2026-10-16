@@ -1,6 +1,5 @@
 # Argo CD projects (#42): what each kind of Application may deploy, from where.
-# Applied before the Applications that use them (sync wave -1). `default` is
-# locked down separately, once nothing uses it.
+# Applied before the Applications that use them (sync wave -1).
 #
 # platform: the cluster's own software, from this repo and the pinned chart
 # repos. Anywhere, including cluster-scoped objects (CRDs, RBAC, webhooks).
@@ -54,3 +53,19 @@ spec:
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
+---
+# default: Argo CD's built-in project, locked down. Nothing uses it; an
+# Application left in it by mistake can't deploy anything, instead of
+# deploying anything anywhere.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Locked down; use platform or apps
+  sourceRepos: []
+  destinations: []
+  clusterResourceWhitelist: []

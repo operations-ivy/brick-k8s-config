@@ -1,8 +1,7 @@
 # Argo CD manages its own install: the chart pinned here, the values from
 # git. Bump the chart here and in validate.yaml together.
 #
-# Manual sync until it has shown no diff against the bootstrap install
-# (brick-k8s-config#42: automated sync app by app, the quiet ones first).
+# Automated (#42): Argo CD upgrades itself from main.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -25,6 +24,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: argocd
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       # The CRDs are too big for client-side apply's last-applied annotation.
       - ServerSideApply=true
