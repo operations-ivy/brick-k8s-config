@@ -131,8 +131,9 @@ prometheus:
     # WAL, so ~1.9GB at 72h, well inside the 10Gi volume and retentionSize.
     retention: 72h
     serviceMonitorSelectorNilUsesHelmValues: false
-    serviceMonitorNamespaceSelector:
-      any: true
+    # Every namespace. ({} is "match all"; the old `any: true` isn't a field of
+    # the Prometheus CRD and was silently dropped, so this changes nothing live.)
+    serviceMonitorNamespaceSelector: {}
     podMonitorSelectorNilUsesHelmValues: false
     # Jenkins (brick-cicd-config's jenkins/) brings its own ServiceMonitor, as
     # job="jenkins", the job name it had while it ran on brick9000.

@@ -1,0 +1,25 @@
+# The node-feature-discovery Helm release: chart pinned here, values from git
+# (nfd/nfd-values.yaml). Bump the chart here and in validate.yaml together.
+#
+# Manual sync until it has shown no diff against what's live (#42).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: node-feature-discovery
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/node-feature-discovery/charts
+      chart: node-feature-discovery
+      targetRevision: 0.19.0
+      helm:
+        releaseName: node-feature-discovery
+        valueFiles:
+          - $values/nfd/nfd-values.yaml
+    - repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: node-feature-discovery
