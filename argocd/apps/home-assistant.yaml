@@ -1,7 +1,7 @@
 # Home Assistant (its config PVC is on brick2000). From operations-ivy/home-assistant's k8s_config/ on main.
 #
-# Manual sync until it has shown no diff against what's live (#42); then
-# automated, with prune and self-heal, in its own PR.
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -18,3 +18,7 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: home-assistant
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
