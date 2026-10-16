@@ -19,6 +19,8 @@ spec:
     - https://grafana.github.io/helm-charts
     - https://open-telemetry.github.io/opentelemetry-helm-charts
     - https://kubernetes-sigs.github.io/node-feature-discovery/charts
+    - registry-1.docker.io/bitnamicharts
+    - git@github.com:operations-ivy/brick-k8s-secrets.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"

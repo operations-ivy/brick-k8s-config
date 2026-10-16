@@ -478,11 +478,18 @@ The admin password hash and the server key are `argocd-secret`, a
 SealedSecret in brick-k8s-secrets (`argocd/`), so the chart doesn't create
 that Secret.
 
+`apps/secrets.yaml` syncs every SealedSecret in brick-k8s-secrets (over SSH,
+with a read-only deploy key), and `apps/sealed-secrets.yaml` the controller.
+Both are automated without prune: a secret is only ever removed by hand.
+
 ### Bootstrap (once, or rebuilding the cluster)
 
 ```bash
 kubectl apply -f argocd/argocd-namespace.yaml
 kubectl apply -f ../brick-k8s-secrets/argocd/argocd-secret-sealedsecret.yaml
+# Argo's read-only deploy key for the private brick-k8s-secrets (it can't
+# read that repo, where this lives, without it):
+kubectl apply -f ../brick-k8s-secrets/argocd/repo-brick-k8s-secrets-sealedsecret.yaml
 helm repo add argo https://argoproj.github.io/argo-helm
 helm upgrade --install argocd argo/argo-cd --version 10.10.5 \
   --namespace argocd -f argocd/argocd-values.yaml
