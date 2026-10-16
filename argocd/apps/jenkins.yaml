@@ -1,0 +1,36 @@
+# The cluster's Jenkins (operations-ivy/brick-cicd-config's jenkins/): the
+# jenkinsci chart pinned here, the values and namespace.yaml from that repo.
+# The image is built before the merge (jenkins/release there), so a merge is
+# the deploy; jenkins/release --check confirms the jobs loaded after it.
+# JENKINS_HOME's PVC carries Prune=false,Delete=false (values.yaml).
+#
+# Automated (#42).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jenkins
+  namespace: argocd
+spec:
+  project: platform
+  sources:
+    - repoURL: https://charts.jenkins.io
+      chart: jenkins
+      targetRevision: 5.9.68
+      helm:
+        releaseName: jenkins
+        valueFiles:
+          - $values/jenkins/values.yaml
+    # The values (ref) and the two namespaces (jenkins, jenkins-agents).
+    - repoURL: https://github.com/operations-ivy/brick-cicd-config.git
+      targetRevision: main
+      ref: values
+      path: jenkins
+      directory:
+        include: namespace.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: jenkins
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
