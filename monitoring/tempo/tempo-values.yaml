@@ -1,5 +1,11 @@
 tempo:
   retention: 96h
+  # The chart lists a bare `opencensus:` (null) receiver. Argo CD's Helm 4
+  # drops it, so OpenCensus is off; Helm 3 can't remove a null default and
+  # would keep it, so `helm template` here still shows it. Nothing sends
+  # OpenCensus (traces go OTLP through the collector).
+  receivers:
+    opencensus: null
   # The chart reads resources from `tempo.resources`; a top-level `resources`
   # is silently ignored, which left tempo-0 unbounded until 2026-09-24.
   resources:

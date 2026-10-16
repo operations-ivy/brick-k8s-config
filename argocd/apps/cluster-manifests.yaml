@@ -1,0 +1,35 @@
+# brick-k8s-config's plain manifests: the Kubernetes Dashboard, the
+# monitoring ingresses and Grafana dashboards, the NFD rules, and the
+# namespaces. Not argocd/ (Argo's own app and the app list), Helm values,
+# validate.yaml, debug/ (applied by hand only while debugging), or
+# traefik/ (k3s's own add-on config stays with k3s, #42).
+#
+# Manual sync until it has shown no diff against what's live (#42).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-manifests
+  namespace: argocd
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+    targetRevision: main
+    path: .
+    directory:
+      recurse: true
+      include: '{dashboard/*.yaml,monitoring/*.yaml,monitoring/dashboards/*.yaml,nfd/nfd-namespace.yaml,nfd/node-feature-rules.yaml,secrets/sealed-secrets-namespace.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+  # The Dashboard writes its own CSRF key into this Secret at start (as
+  # validate.yaml's expected_drift says); syncing the empty one from git would
+  # blank it.
+  ignoreDifferences:
+    - kind: Secret
+      name: kubernetes-dashboard-csrf
+      namespace: kubernetes-dashboard
+      jsonPointers:
+        - /data
+  syncPolicy:
+    syncOptions:
+      - RespectIgnoreDifferences=true

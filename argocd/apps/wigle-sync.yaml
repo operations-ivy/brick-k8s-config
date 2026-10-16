@@ -8,7 +8,7 @@ metadata:
   name: wigle-sync
   namespace: argocd
 spec:
-  project: default
+  project: apps
   source:
     repoURL: https://github.com/operations-ivy/wigle-sync.git
     targetRevision: main

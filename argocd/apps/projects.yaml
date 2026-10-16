@@ -1,0 +1,56 @@
+# Argo CD projects (#42): what each kind of Application may deploy, from where.
+# Applied before the Applications that use them (sync wave -1). `default` is
+# locked down separately, once nothing uses it.
+#
+# platform: the cluster's own software, from this repo and the pinned chart
+# repos. Anywhere, including cluster-scoped objects (CRDs, RBAC, webhooks).
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: The cluster's own software (brick-k8s-config and its charts)
+  sourceRepos:
+    - https://github.com/operations-ivy/brick-k8s-config.git
+    - https://argoproj.github.io/argo-helm
+    - https://prometheus-community.github.io/helm-charts
+    - https://grafana.github.io/helm-charts
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
+    - https://kubernetes-sigs.github.io/node-feature-discovery/charts
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+# apps: the household apps, each from its own repo. Only their own
+# namespaces (plus monitoring, where chucks-wisdom keeps a ServiceMonitor),
+# and no cluster-scoped objects but their Namespace: an app repo can't grant
+# itself RBAC or touch kube-system.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: The household apps (one repo each)
+  sourceRepos:
+    - https://github.com/operations-ivy/overwatch.git
+    - https://github.com/operations-ivy/wigle-sync.git
+    - https://github.com/operations-ivy/home-assistant.git
+    - https://github.com/operations-ivy/chucks-wisdom.git
+  destinations:
+    - {server: https://kubernetes.default.svc, namespace: overwatch}
+    - {server: https://kubernetes.default.svc, namespace: wigle}
+    - {server: https://kubernetes.default.svc, namespace: home-assistant}
+    - {server: https://kubernetes.default.svc, namespace: chuck}
+    - {server: https://kubernetes.default.svc, namespace: monitoring}
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

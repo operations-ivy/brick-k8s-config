@@ -1,0 +1,25 @@
+# The loki Helm release: chart pinned here, values from git
+# (monitoring/loki/loki-values.yaml). Bump the chart here and in validate.yaml together.
+#
+# Manual sync until it has shown no diff against what's live (#42).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  project: platform
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 7.3.0
+      helm:
+        releaseName: loki
+        valueFiles:
+          - $values/monitoring/loki/loki-values.yaml
+    - repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
