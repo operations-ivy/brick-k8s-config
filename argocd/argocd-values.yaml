@@ -40,6 +40,11 @@ controller:
     limits: {memory: 768Mi}
   metrics:
     enabled: true
+    # argocd_app_labels{label_brick_trial="true"}: an app on a branch
+    # (scripts/trial-branch), for ArgoAppOnBranch.
+    applicationLabels:
+      enabled: true
+      labels: ["brick-trial"]
     serviceMonitor:
       enabled: true
 

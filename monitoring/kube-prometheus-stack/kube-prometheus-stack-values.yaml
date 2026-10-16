@@ -249,6 +249,48 @@ additionalPrometheusRulesMap:
               severity: warning
             annotations:
               summary: "{{ $labels.instance }}'s clock is {{ $value | humanizeDuration }} off"
+  # Argo CD (#42): every app should be Synced, Healthy, on automated sync and
+  # on main. A failing sync, a stuck rollout or a trial left on a branch shows
+  # up here instead of being noticed by chance. max by (name): one series per
+  # app, whichever controller pod reports it.
+  brick-argocd:
+    groups:
+      - name: brick-argocd
+        rules:
+          - alert: ArgoAppOutOfSync
+            expr: max by (name) (argocd_app_info{sync_status!="Synced"}) == 1
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Argo CD app {{ $labels.name }} hasn't matched git for 15 minutes"
+          - alert: ArgoAppUnhealthy
+            expr: max by (name, health_status) (argocd_app_info{health_status!="Healthy"}) == 1
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Argo CD app {{ $labels.name }} has been {{ $labels.health_status }} for 15 minutes"
+          - alert: ArgoSyncFailing
+            expr: sum by (name) (increase(argocd_app_sync_total{phase=~"Error|Failed"}[30m])) > 0
+            labels:
+              severity: warning
+            annotations:
+              summary: "Argo CD couldn't sync {{ $labels.name }} in the last 30 minutes"
+          - alert: ArgoAutoSyncOff
+            expr: max by (name) (argocd_app_info{autosync_enabled="false"}) == 1
+            for: 1h
+            labels:
+              severity: warning
+            annotations:
+              summary: "Argo CD app {{ $labels.name }} has had automated sync off for an hour"
+          - alert: ArgoAppOnBranch
+            expr: max by (name) (argocd_app_labels{label_brick_trial="true"}) == 1
+            for: 24h
+            labels:
+              severity: warning
+            annotations:
+              summary: "Argo CD app {{ $labels.name }} has been on a branch for a day: scripts/trial-branch {{ $labels.name }} main"
   # SoC temperature on every host. brick666's case fan was never switched on
   # (2026-10-15) and it idled at ~80 °C for a week unnoticed; its fan has no
   # tach wire, so temperature is the only sign the fan has died. Pis
