@@ -2,8 +2,8 @@
 # The importer Job is left out: Jenkins' chuck-importer job creates it and it
 # deletes itself 10 minutes after finishing, so Argo would keep recreating it.
 #
-# Manual sync until it has shown no diff against what's live (#42); then
-# automated, with prune and self-heal, in its own PR.
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -22,3 +22,7 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: chuck
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
