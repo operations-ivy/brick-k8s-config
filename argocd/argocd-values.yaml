@@ -1,0 +1,81 @@
+# Argo CD (brick-k8s-config#42): deploys the cluster's workloads from git.
+# Non-HA and lean for the Pi 5s; stateless (its state is git and the cluster),
+# so no volumes. brick420's NoSchedule taint keeps it on the workers.
+#
+# Bootstrap, once (README "Argo CD"): the argocd-secret SealedSecret from
+# brick-k8s-secrets, then `helm upgrade --install` with these values, then
+# argocd/root.yaml. After that Argo CD manages itself (apps/argocd.yaml).
+
+global:
+  domain: argocd.brick.nozdormu.cloud
+  # Stateless, so it prefers the stateless worker (brick666) over the storage
+  # node; soft, so it can still fall back to brick2000.
+  affinity:
+    nodeAffinity:
+      type: soft
+      matchExpressions:
+        - key: chuck.io/storage-node
+          operator: DoesNotExist
+
+configs:
+  params:
+    # TLS ends at Caddy on brick9000; Traefik passes plain HTTP inside.
+    server.insecure: true
+  cm:
+    # Local admin only: no SSO.
+    admin.enabled: true
+    # Resource tracking by annotation, so Argo doesn't fight Helm's and
+    # k3s's own app.kubernetes.io/instance labels.
+    application.resourceTrackingMethod: annotation
+    # Poll git every 3 minutes (GitHub can't reach the LAN for webhooks).
+    timeout.reconciliation: 180s
+  secret:
+    # argocd-secret (admin password hash, server key) is a SealedSecret in
+    # brick-k8s-secrets/argocd/, so the login survives a rebuild from git.
+    createSecret: false
+
+controller:
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 768Mi}
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+server:
+  resources:
+    requests: {cpu: 50m, memory: 96Mi}
+    limits: {memory: 256Mi}
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    # Served through brick9000's proxy (brick-cicd-config), like the others.
+    hostname: argocd.brick.nozdormu.cloud
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+repoServer:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+redis:
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {memory: 128Mi}
+
+# Not used: SSO (dex), ApplicationSets (the apps are listed by hand in
+# apps/), notifications (alerts come from Prometheus).
+dex:
+  enabled: false
+applicationSet:
+  replicas: 0
+notifications:
+  enabled: false

@@ -8,6 +8,7 @@ releases:
   - {name: promtail, namespace: monitoring, chart: grafana/promtail, version: 6.17.1, values: monitoring/promtail/promtail-values.yaml}
   - {name: pushgateway, namespace: monitoring, chart: prometheus-community/prometheus-pushgateway, version: 3.9.0, values: monitoring/pushgateway/pushgateway-values.yaml}
   - {name: node-feature-discovery, namespace: node-feature-discovery, chart: nfd/node-feature-discovery, version: 0.19.0, values: nfd/nfd-values.yaml}
+  - {name: argocd, namespace: argocd, chart: argo/argo-cd, version: 10.10.5, values: argocd/argocd-values.yaml}
   - {name: sealed-secrets, namespace: sealed-secrets, chart: oci://registry-1.docker.io/bitnamicharts/sealed-secrets, version: 2.20.0, values: secrets/sealed-secrets/sealed-secrets-values.yaml}
 
 # Values whose contents the chart passes through as free-form config, so
@@ -15,6 +16,8 @@ releases:
 freeform:
   - loki.limits_config        # Loki's own limits config, rendered as-is
   - config                    # otel-collector: the collector's own config
+  - configs.params            # Argo CD: argocd-cmd-params-cm, rendered as-is
+  - configs.cm                # Argo CD: argocd-cm, rendered as-is
 
 # Manifests applied by hand only while debugging: checked, but their absence
 # from the cluster isn't drift.
