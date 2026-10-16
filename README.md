@@ -46,6 +46,12 @@ without a local-path volume (and coredns and traefik only with `--all`), and
 uncordons them even if it fails or is interrupted. It prints pods and memory
 per node before and after.
 
+A Pi 5 whose case fan the firmware doesn't detect (brick666's) is listed in
+`CASE_FANS` in `scripts/join-worker`, which puts its fan dtparams in
+`/boot/firmware/config.txt` (`dtparam=cooling_fan=on` and a quieter,
+always-on first level). Without them the fan never runs. By hand, append
+them under a final `[all]` and reboot.
+
 The manual steps, for when the scripts can't be used:
 
 1. Turn on memory cgroups. The Pi kernel disables them by default
