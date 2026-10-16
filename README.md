@@ -494,6 +494,22 @@ To change the admin password, seal a new `argocd-secret` (bcrypt hash in
 `admin.password`, a fresh `admin.passwordMtime`, the same or a new
 `server.secretkey`).
 
+### Trying a branch before merging
+
+Every app follows `main`, so a merge is a deploy. To try a branch on the
+cluster first:
+
+```bash
+scripts/trial-branch overwatch my-branch   # the app follows the branch
+scripts/trial-branch --list                # what's on a branch
+scripts/trial-branch overwatch main        # back to main, after the merge
+```
+
+For an app repo it moves the app to that repo's branch; for a Helm release
+here it moves the values to this repo's branch (the chart stays pinned).
+`root.yaml` ignores that field and the trial label, so root doesn't undo it,
+and `ArgoAppOnBranch` alerts if an app is still on a branch a day later.
+
 ### Moving an app in
 
 Add `argocd/apps/<app>.yaml` without `automated` sync, merge it, and check

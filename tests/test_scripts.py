@@ -25,6 +25,7 @@ prune = load("prune_images", "prune_images.py")
 validate = load("validate", "validate")
 join_worker = load("join_worker", "join-worker")
 rebalance = load("rebalance", "rebalance")
+trial = load("trial_branch", "trial-branch")
 
 
 class PruneTests(unittest.TestCase):
@@ -188,3 +189,26 @@ class RebalanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrialBranchTests(unittest.TestCase):
+    APP = {"metadata": {"name": "overwatch"}, "spec": {"source": {"repoURL": "https://github.com/x/overwatch.git"}}}
+    HELM = {"metadata": {"name": "loki", "labels": {"a": "b"}}, "spec": {"sources": [
+        {"repoURL": "https://grafana.github.io/helm-charts", "chart": "loki"},
+        {"repoURL": "https://github.com/x/brick-k8s-config.git", "ref": "values"}]}}
+
+    def test_a_branch_moves_the_git_source_and_labels_it(self):
+        ops = trial.patch(self.APP, "fix-x")
+        self.assertEqual(ops[0], {"op": "replace", "path": "/spec/source/targetRevision", "value": "fix-x"})
+        self.assertIn({"op": "add", "path": "/metadata/labels/brick-trial", "value": "true"}, ops)
+        self.assertIn({"op": "add", "path": "/metadata/annotations/brick-trial-branch", "value": "fix-x"}, ops)
+
+    def test_a_helm_release_moves_its_values_not_its_chart(self):
+        self.assertEqual(trial.patch(self.HELM, "b")[0]["path"], "/spec/sources/1/targetRevision")
+        self.assertNotIn({"op": "add", "path": "/metadata/labels", "value": {}}, trial.patch(self.HELM, "b"))
+
+    def test_main_removes_the_label_only_if_there(self):
+        on = {"metadata": {"name": "o", "labels": {"brick-trial": "true"}, "annotations": {"brick-trial-branch": "b"}},
+              "spec": self.APP["spec"]}
+        self.assertEqual([o["op"] for o in trial.patch(on, "main")], ["replace", "remove", "remove"])
+        self.assertEqual([o["op"] for o in trial.patch(self.APP, "main")], ["replace"])

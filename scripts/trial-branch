@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Try a branch on the cluster before merging, with Argo CD (#42).
+
+    scripts/trial-branch overwatch my-branch   # overwatch follows my-branch
+    scripts/trial-branch overwatch main        # back to main (after the merge)
+    scripts/trial-branch --list                # which apps are on a branch
+
+Every Application follows main. This points one at a branch instead: its
+own repo's branch for an app repo, or brick-k8s-config's branch for the
+values of a Helm release (the chart stays pinned). Self-heal then keeps it
+on the branch, and root leaves the change alone (root.yaml ignores
+targetRevision and the trial label), so the branch is what runs until it's
+put back.
+
+It labels the Application brick-trial=true, with the branch in an
+annotation, and ArgoAppOnBranch alerts if one is still on a branch after a
+day: put it back once the PR is merged (or abandoned).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+
+LABEL = "brick-trial"
+ANNOTATION = "brick-trial-branch"
+GIT = "https://github.com/"
+
+
+def kubectl(*args: str, input: str | None = None) -> str:
+    out = subprocess.run(["kubectl", "-n", "argocd", *args], capture_output=True, text=True, input=input)
+    if out.returncode:
+        raise SystemExit(f"kubectl {' '.join(args[:3])}...: {out.stderr.strip()}")
+    return out.stdout
+
+
+def git_source(app: dict) -> str:
+    """The JSON pointer of the git source's targetRevision: the single source,
+    or for a Helm release the git source that carries the values (ref)."""
+    spec = app["spec"]
+    if "source" in spec:
+        return "/spec/source/targetRevision"
+    for i, s in enumerate(spec.get("sources", [])):
+        if s.get("repoURL", "").startswith(GIT) and not s.get("chart"):
+            return f"/spec/sources/{i}/targetRevision"
+    raise SystemExit(f"{app['metadata']['name']}: no git source to point at a branch")
+
+
+def patch(app: dict, branch: str) -> list[dict]:
+    """A JSON patch that puts `app` on `branch` (main: back to normal)."""
+    ops = [{"op": "replace", "path": git_source(app), "value": branch}]
+    md = app["metadata"]
+    labels, notes = md.get("labels") or {}, md.get("annotations") or {}
+    if branch == "main":
+        if LABEL in labels:
+            ops.append({"op": "remove", "path": f"/metadata/labels/{LABEL}"})
+        if ANNOTATION in notes:
+            ops.append({"op": "remove", "path": f"/metadata/annotations/{ANNOTATION}"})
+        return ops
+    if not labels:
+        ops.append({"op": "add", "path": "/metadata/labels", "value": {}})
+    if not notes:
+        ops.append({"op": "add", "path": "/metadata/annotations", "value": {}})
+    ops.append({"op": "add", "path": f"/metadata/labels/{LABEL}", "value": "true"})
+    ops.append({"op": "add", "path": f"/metadata/annotations/{ANNOTATION}", "value": branch})
+    return ops
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("app", nargs="?", help="the Application (argocd/apps/<app>.yaml)")
+    parser.add_argument("branch", nargs="?", help="the branch to follow, or main")
+    parser.add_argument("--list", action="store_true", help="list the apps on a branch")
+    args = parser.parse_args()
+    if args.list:
+        apps = json.loads(kubectl("get", "applications", "-o", "json"))["items"]
+        on = [(a["metadata"]["name"], (a["metadata"].get("annotations") or {}).get(ANNOTATION, "?"))
+              for a in apps if (a["metadata"].get("labels") or {}).get(LABEL) == "true"]
+        for name, branch in on:
+            print(f"{name}: {branch}")
+        if not on:
+            print("every app follows main")
+        return 0
+    if not (args.app and args.branch):
+        parser.error("give an app and a branch (or --list)")
+    app = json.loads(kubectl("get", "application", args.app, "-o", "json"))
+    kubectl("patch", "application", args.app, "--type", "json", "-p", json.dumps(patch(app, args.branch)))
+    kubectl("annotate", "application", args.app, "argocd.argoproj.io/refresh=hard", "--overwrite")
+    where = "main again" if args.branch == "main" else f"branch {args.branch}"
+    print(f"{args.app} now follows {where}; Argo CD syncs it within a few seconds")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
