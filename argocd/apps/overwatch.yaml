@@ -1,0 +1,20 @@
+# Bluetooth, Wi-Fi and UPnP watch. From operations-ivy/overwatch's k8s_config/ on main.
+#
+# Manual sync until it has shown no diff against what's live (#42); then
+# automated, with prune and self-heal, in its own PR.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: overwatch
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/operations-ivy/overwatch.git
+    targetRevision: main
+    path: k8s_config
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: overwatch

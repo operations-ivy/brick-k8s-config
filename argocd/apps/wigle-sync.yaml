@@ -1,0 +1,22 @@
+# Wardriving uploads (CronJob) and wigle-console. From operations-ivy/wigle-sync's k8s_config/ on main.
+#
+# Manual sync until it has shown no diff against what's live (#42); then
+# automated, with prune and self-heal, in its own PR.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wigle-sync
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/operations-ivy/wigle-sync.git
+    targetRevision: main
+    path: k8s_config
+    directory:
+      recurse: true
+      # The Grafana dashboards' .json sources sit beside their ConfigMaps.
+      exclude: '{*.json,**/*.json}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: wigle
