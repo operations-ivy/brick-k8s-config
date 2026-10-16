@@ -70,7 +70,8 @@ class PruneTests(unittest.TestCase):
         seen = []
         self._main([], {}, lambda n: seen.append(n) or {})
         self.assertEqual(seen, prune.NODES)
-        self.assertEqual(len(prune.NODES), 4)
+        self.assertEqual(len(set(prune.NODES)), len(prune.NODES))  # each once
+        # Whether NODES matches the cluster is validate --cluster's job.
 
     def test_apply_without_hub_credentials_is_exit_2(self):
         code, out, hub_request, node_rmi = self._main(
@@ -88,6 +89,11 @@ class PruneTests(unittest.TestCase):
 
 
 class ValidateTests(unittest.TestCase):
+    def test_node_list_drift(self):
+        self.assertEqual(validate.node_list_drift(["10.0.0.1", "10.0.0.2"], {"10.0.0.2", "10.0.0.1"}), [])
+        self.assertEqual(validate.node_list_drift(["10.0.0.1", "10.0.0.9"], {"10.0.0.1", "10.0.0.2"}),
+                         ["scripts/prune_images.py NODES: missing 10.0.0.2, not in the cluster 10.0.0.9"])
+
     def test_unknown_keys_and_freeform_blocks(self):
         chart = {"a": {"b": 1, "c": {}}, "config": {"x": 1}}
         ours = {"a": {"b": 2, "typo": 3, "c": {"anything": 1}}, "config": {"free": 1}, "nope": 1}

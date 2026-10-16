@@ -18,6 +18,7 @@ Static:
   values (`helm get values`) against its values file
 - health: every Deployment available, every PodDisruptionBudget allowing a
   disruption, and no pod but DaemonSets' on a control-plane node
+- scripts/prune_images.py's NODES lists exactly the cluster's nodes
 
 Exits 1 if anything fails. Needs PyYAML.
 """
@@ -25,6 +26,8 @@ Exits 1 if anything fails. Needs PyYAML.
 from __future__ import annotations
 
 import argparse
+import importlib.machinery
+import importlib.util
 import json
 import subprocess
 import sys
@@ -158,6 +161,23 @@ def check_cluster(config: dict, mans: list[Path]) -> list[str]:
     return errors
 
 
+def node_list_drift(listed: list[str], live: set[str]) -> list[str]:
+    """prune_images.py keeps its own node list (it SSHes to each): flag it going stale."""
+    missing, extra = sorted(live - set(listed)), sorted(set(listed) - live)
+    if not (missing or extra):
+        return []
+    parts = ([f"missing {', '.join(missing)}"] if missing else []) + \
+            ([f"not in the cluster {', '.join(extra)}"] if extra else [])
+    return [f"scripts/prune_images.py NODES: {', '.join(parts)}"]
+
+
+def prune_nodes() -> list[str]:
+    loader = importlib.machinery.SourceFileLoader("prune_images", str(ROOT / "scripts" / "prune_images.py"))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader("prune_images", loader))
+    loader.exec_module(module)
+    return module.NODES
+
+
 def check_health() -> list[str]:
     errors = []
     def kget(*args):
@@ -169,8 +189,11 @@ def check_health() -> list[str]:
     for b in kget("pdb", "-A"):
         if b["status"].get("disruptionsAllowed", 0) < 1:
             errors.append(f"pdb {b['metadata']['namespace']}/{b['metadata']['name']}: allows no disruption")
-    control = {n["metadata"]["name"] for n in kget("nodes")
+    nodes = kget("nodes")
+    control = {n["metadata"]["name"] for n in nodes
                if "node-role.kubernetes.io/control-plane" in n["metadata"].get("labels", {})}
+    live = {a["address"] for n in nodes for a in n["status"].get("addresses", []) if a["type"] == "InternalIP"}
+    errors += node_list_drift(prune_nodes(), live)
     for p in kget("pods", "-A", "--field-selector=status.phase=Running"):
         owners = {o["kind"] for o in p["metadata"].get("ownerReferences", [])}
         if p["spec"].get("nodeName") in control and "DaemonSet" not in owners:
