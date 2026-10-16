@@ -8,7 +8,7 @@ metadata:
   name: overwatch
   namespace: argocd
 spec:
-  project: default
+  project: apps
   source:
     repoURL: https://github.com/operations-ivy/overwatch.git
     targetRevision: main

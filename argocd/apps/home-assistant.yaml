@@ -8,7 +8,7 @@ metadata:
   name: home-assistant
   namespace: argocd
 spec:
-  project: default
+  project: apps
   source:
     repoURL: https://github.com/operations-ivy/home-assistant.git
     targetRevision: main

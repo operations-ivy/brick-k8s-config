@@ -10,7 +10,7 @@ metadata:
   name: chucks-wisdom
   namespace: argocd
 spec:
-  project: default
+  project: apps
   source:
     repoURL: https://github.com/operations-ivy/chucks-wisdom.git
     targetRevision: main

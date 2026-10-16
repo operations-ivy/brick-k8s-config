@@ -8,7 +8,7 @@ metadata:
   name: promtail
   namespace: argocd
 spec:
-  project: default
+  project: platform
   sources:
     - repoURL: https://grafana.github.io/helm-charts
       chart: promtail
