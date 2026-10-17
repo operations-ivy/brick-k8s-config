@@ -4,9 +4,9 @@
 # the Let's Encrypt wildcard), at brick9000's old address 192.168.1.221
 # (kube-vip.yaml), passing each name to Traefik in the cluster.
 #
-# The image isn't on a registry: build it from brick-cicd-config's
-# brick9000/proxy with brick2000's BuildKit and import it into brick2000's
-# containerd (README, "Front door"). The pod runs on brick2000 anyway: its
+# The image is whitepatrick/brick-proxy on Docker Hub, built from
+# brick-cicd-config's brick9000/proxy on brick2000's BuildKit (README, "Front
+# door on the cluster"), pinned by digest. The pod runs on brick2000: its
 # certificate lives on a local-path volume there.
 apiVersion: v1
 kind: Namespace
@@ -37,11 +37,17 @@ data:
     			api_secret_key {file./run/secrets/porkbun/secret_key}
     		}
     	}
-    	# brick-status (the board's mirror and the speaker's volume page) ran on
-    	# brick9000 itself.
-    	@brick9000 host status.brick.nozdormu.cloud volume.brick.nozdormu.cloud
-    	handle @brick9000 {
-    		respond "brick9000 is down (hardware); the board and its speaker come back with it." 503
+    	# The board's web mirror ran on brick9000 (brick-status): the hosts
+    	# dashboard in Grafana stands in for it. When brick9000 is back on its
+    	# new address, status and volume can go to its brick-status again.
+    	@status host status.brick.nozdormu.cloud
+    	handle @status {
+    		redir https://grafana.brick.nozdormu.cloud/d/brick-hosts 302
+    	}
+    	# brick9000's speaker: nothing to stand in for it.
+    	@volume host volume.brick.nozdormu.cloud
+    	handle @volume {
+    		respond "brick9000 is down (hardware); its speaker's volume page comes back with it." 503
     	}
     	# The Kubernetes Dashboard is only on Traefik's HTTPS entrypoint, behind
     	# a self-signed certificate; pass the name on explicitly.
@@ -101,15 +107,14 @@ spec:
         app.kubernetes.io/name: caddy
       annotations:
         # Restart when the Caddyfile changes (bump by hand with it).
-        brick/caddyfile-rev: "1"
+        brick/caddyfile-rev: "2"
     spec:
       nodeSelector:
         chuck.io/storage-node: "true"
       containers:
         - name: caddy
-          image: docker.io/whitepatrick/brick-proxy:2.11.4-porkbun0.3.1
-          # Imported into brick2000's containerd, never pulled (see the top).
-          imagePullPolicy: Never
+          image: docker.io/whitepatrick/brick-proxy:2.11.4-porkbun0.3.1@sha256:bac9e50ca632ce275372d5f0037c3c335b63d65785f2f26e0f6564eb7113831d
+          imagePullPolicy: IfNotPresent
           ports:
             - {name: http, containerPort: 80}
             - {name: https, containerPort: 443}

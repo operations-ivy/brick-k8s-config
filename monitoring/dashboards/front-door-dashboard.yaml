@@ -1,4 +1,4 @@
-# Grafana dashboard: Caddy on brick9000 (the front door for every
+# Grafana dashboard: Caddy on the cluster (the front door for every
 # *.brick.nozdormu.cloud name) and Traefik behind it.
 #   kubectl apply -f monitoring/dashboards/
 apiVersion: v1
@@ -35,7 +35,7 @@ data:
       "panels": [
         {
           "type": "row",
-          "title": "Caddy on brick9000 (every *.brick.nozdormu.cloud name)",
+          "title": "Caddy, the front door (every *.brick.nozdormu.cloud name)",
           "collapsed": false,
           "panels": [],
           "gridPos": {
@@ -1381,7 +1381,7 @@ data:
       "tags": [
         "caddy",
         "traefik",
-        "brick9000"
+        "front-door"
       ],
       "templating": {
         "list": []
