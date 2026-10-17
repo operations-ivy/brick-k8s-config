@@ -1,0 +1,161 @@
+# The front door for every *.brick.nozdormu.cloud name, on the cluster since
+# brick9000's hardware died (2026-10-17). The same Caddy as brick9000's
+# (brick-cicd-config brick9000/proxy: Caddy with the Porkbun DNS plugin for
+# the Let's Encrypt wildcard), at brick9000's old address 192.168.1.221
+# (kube-vip.yaml), passing each name to Traefik in the cluster.
+#
+# The image isn't on a registry: build it from brick-cicd-config's
+# brick9000/proxy with brick2000's BuildKit and import it into brick2000's
+# containerd (README, "Front door"). The pod runs on brick2000 anyway: its
+# certificate lives on a local-path volume there.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: front-door
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: caddyfile
+  namespace: front-door
+data:
+  Caddyfile: |
+    {
+    	auto_https disable_redirects
+    	metrics {
+    		per_host
+    	}
+    }
+    # Traefik routes by the same host names (each app's ingress lists its own).
+    (traefik) {
+    	reverse_proxy traefik.kube-system.svc.cluster.local:80
+    }
+    *.brick.nozdormu.cloud {
+    	tls {
+    		dns porkbun {
+    			api_key {file./run/secrets/porkbun/api_key}
+    			api_secret_key {file./run/secrets/porkbun/secret_key}
+    		}
+    	}
+    	# brick-status (the board's mirror and the speaker's volume page) ran on
+    	# brick9000 itself.
+    	@brick9000 host status.brick.nozdormu.cloud volume.brick.nozdormu.cloud
+    	handle @brick9000 {
+    		respond "brick9000 is down (hardware); the board and its speaker come back with it." 503
+    	}
+    	# The Kubernetes Dashboard is only on Traefik's HTTPS entrypoint, behind
+    	# a self-signed certificate; pass the name on explicitly.
+    	@dashboard host dashboard.brick.nozdormu.cloud
+    	handle @dashboard {
+    		reverse_proxy https://traefik.kube-system.svc.cluster.local:443 {
+    			header_up Host {host}
+    			transport http {
+    				tls_server_name dashboard.brick.nozdormu.cloud
+    				tls_insecure_skip_verify
+    			}
+    		}
+    	}
+    	@apps host jenkins.brick.nozdormu.cloud argocd.brick.nozdormu.cloud grafana.brick.nozdormu.cloud prometheus.brick.nozdormu.cloud wigle.brick.nozdormu.cloud radar.brick.nozdormu.cloud reader.brick.nozdormu.cloud overwatch.brick.nozdormu.cloud homeassistant.brick.nozdormu.cloud
+    	handle @apps {
+    		import traefik
+    	}
+    	handle {
+    		respond "No app here" 404
+    	}
+    }
+    http://*.brick.nozdormu.cloud {
+    	redir https://{host}{uri} 308
+    }
+    # Caddy's own metrics for Prometheus (the caddy scrape job, 192.168.1.221:9180).
+    http://:9180 {
+    	metrics /metrics
+    }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: caddy-data
+  namespace: front-door
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: caddy
+  namespace: front-door
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: caddy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: caddy
+      annotations:
+        # Restart when the Caddyfile changes (bump by hand with it).
+        brick/caddyfile-rev: "1"
+    spec:
+      nodeSelector:
+        chuck.io/storage-node: "true"
+      containers:
+        - name: caddy
+          image: docker.io/whitepatrick/brick-proxy:2.11.4-porkbun0.3.1
+          # Imported into brick2000's containerd, never pulled (see the top).
+          imagePullPolicy: Never
+          ports:
+            - {name: http, containerPort: 80}
+            - {name: https, containerPort: 443}
+            - {name: metrics, containerPort: 9180}
+          volumeMounts:
+            - {name: caddyfile, mountPath: /etc/caddy}
+            - {name: data, mountPath: /data}
+            - {name: porkbun, mountPath: /run/secrets/porkbun, readOnly: true}
+          readinessProbe:
+            tcpSocket: {port: 443}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /metrics, port: 9180}
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: caddyfile
+          configMap:
+            name: caddyfile
+        - name: data
+          persistentVolumeClaim:
+            claimName: caddy-data
+        # brick-k8s-secrets front-door/porkbun-sealedsecret.yaml
+        - name: porkbun
+          secret:
+            secretName: porkbun
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: caddy
+  namespace: front-door
+  annotations:
+    kube-vip.io/loadbalancerIPs: 192.168.1.221
+spec:
+  type: LoadBalancer
+  loadBalancerClass: kube-vip.io/kube-vip-class
+  externalTrafficPolicy: Cluster
+  selector:
+    app.kubernetes.io/name: caddy
+  ports:
+    - {name: http, port: 80, targetPort: 80}
+    - {name: https, port: 443, targetPort: 443}
+    - {name: metrics, port: 9180, targetPort: 9180}

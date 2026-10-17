@@ -1,0 +1,20 @@
+# The front door (front-door/): Caddy at 192.168.1.221 for every
+# *.brick.nozdormu.cloud name, and kube-vip holding that address. Moved onto
+# the cluster when brick9000's hardware died (2026-10-17).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: front-door
+  namespace: argocd
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+    targetRevision: main
+    path: front-door
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

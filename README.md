@@ -363,6 +363,41 @@ The names resolve on every device, phones included, with nothing to install:
   host table, pointing at `192.168.1.221`. No wildcards there: **a new ingress
   needs a router entry**, as well as its host name in the manifest.
 
+### Front door on the cluster (since 2026-10-17)
+
+brick9000's hardware died on 2026-10-17, and the front door moved onto the
+cluster (`front-door/`, Argo CD app `front-door`): the same Caddy (image
+built from brick-cicd-config's `brick9000/proxy`, the Porkbun DNS plugin, the
+same Let's Encrypt wildcard by DNS-01) as a one-replica Deployment on
+brick2000, its certificates on a local-path volume, its Caddyfile in a
+ConfigMap. It forwards each name to Traefik's Service in the cluster;
+`status` and `volume` (brick-status, on brick9000) answer 503.
+
+- **The address:** kube-vip (DaemonSet on the workers, `kube-system`) holds
+  `192.168.1.221`, brick9000's old address, on one worker at a time and moves
+  it if that worker goes (Lease election, gratuitous ARP on `wlan0`; a test
+  failover lost about a second). So the router's DNS entries and the public
+  record didn't change. It only handles Services of class
+  `kube-vip.io/kube-vip-class`; ServiceLB keeps Traefik's.
+- **Before anything else gets 192.168.1.221** (a replacement brick9000):
+  delete the `front-door` app or its Service first. Two hosts answering ARP
+  for one address is an outage.
+- **The Porkbun API keys** are the `porkbun` SealedSecret
+  (brick-k8s-secrets `front-door/`); the plaintext is in `~/.config/porkbun`
+  on the laptop.
+- **The image isn't on a registry** (`imagePullPolicy: Never`): build it
+  with brick2000's BuildKit to a tar and import it into brick2000's
+  containerd:
+
+```bash
+cd ~/code/brick-cicd-config
+docker buildx build --builder brick2000-arm64 --platform linux/arm64 \
+  -t docker.io/whitepatrick/brick-proxy:2.11.4-porkbun0.3.1 \
+  --output type=docker,dest=/tmp/brick-proxy.tar brick9000/proxy
+scp /tmp/brick-proxy.tar zaphod@192.168.1.170:/tmp/
+ssh zaphod@192.168.1.170 'sudo k3s ctr images import /tmp/brick-proxy.tar'
+```
+
 ### No more .local names
 
 The last one, `grafana.local`, was retired on 2026-10-10 once wigle-console
