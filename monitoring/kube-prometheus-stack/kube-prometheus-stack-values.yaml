@@ -147,10 +147,12 @@ prometheus:
         static_configs:
           - targets: ["192.168.1.221:9100"]
             labels: {instance: brick9000}
+      # The front door's Caddy, on the cluster since brick9000 died
+      # (2026-10-17, brick-k8s-config front-door/).
       - job_name: caddy
         static_configs:
-          - targets: ["192.168.1.221:9180"]
-            labels: {instance: brick9000}
+          - targets: ["caddy.front-door.svc.cluster.local:9180"]
+            labels: {instance: front-door}
       - job_name: brick-status
         scheme: https
         static_configs:

@@ -385,18 +385,18 @@ ConfigMap. It forwards each name to Traefik's Service in the cluster;
 - **The Porkbun API keys** are the `porkbun` SealedSecret
   (brick-k8s-secrets `front-door/`); the plaintext is in `~/.config/porkbun`
   on the laptop.
-- **The image isn't on a registry** (`imagePullPolicy: Never`): build it
-  with brick2000's BuildKit to a tar and import it into brick2000's
-  containerd:
+- **The image** is `whitepatrick/brick-proxy` on Docker Hub, pinned by
+  digest. To change Caddy or the plugin, bump the Dockerfile's versions
+  (brick-cicd-config `brick9000/proxy`), build with a new tag and pin it here:
 
 ```bash
 cd ~/code/brick-cicd-config
 docker buildx build --builder brick2000-arm64 --platform linux/arm64 \
-  -t docker.io/whitepatrick/brick-proxy:2.11.4-porkbun0.3.1 \
-  --output type=docker,dest=/tmp/brick-proxy.tar brick9000/proxy
-scp /tmp/brick-proxy.tar zaphod@192.168.1.170:/tmp/
-ssh zaphod@192.168.1.170 'sudo k3s ctr images import /tmp/brick-proxy.tar'
+  -t docker.io/whitepatrick/brick-proxy:<caddy>-porkbun<plugin> --push brick9000/proxy
 ```
+
+- `status` redirects to Grafana's hosts dashboard (the board's web mirror
+  ran on brick9000); `volume` answers 503 until brick9000 is back.
 
 ### No more .local names
 
