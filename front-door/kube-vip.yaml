@@ -5,12 +5,14 @@
 # *.brick.nozdormu.cloud name at it, so taking the address over moved the
 # front door without touching either (2026-10-17, brick9000's hardware died).
 #
-# Only Services of class kube-vip.io/kube-vip-class (lb_class_only): k3s's
-# ServiceLB keeps every other LoadBalancer (Traefik's).
+# Only Services of class kube-vip.io/kube-vip-class (lb_class_only). k3s's
+# ServiceLB is disabled (`disable: [servicelb]` on brick420): it blanked the
+# front door's status and took its address over (front-door/caddy.yaml).
 #
-# Before a brick9000 (or anything else) gets 192.168.1.221 back, delete
-# front-door's Service (or this) first: two hosts answering ARP for one
-# address is an outage.
+# 192.168.1.221 is a service address now, never a host's again: brick9000
+# comes back on an address of its own, and everything reaches hosts by name
+# (the router's DNS follows their DHCP leases). A host answering ARP for it
+# too would be an outage; the FrontDoorDown alert catches that.
 apiVersion: v1
 kind: ServiceAccount
 metadata:

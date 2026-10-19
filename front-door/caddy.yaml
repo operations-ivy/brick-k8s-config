@@ -147,6 +147,17 @@ spec:
           secret:
             secretName: porkbun
 ---
+# kube-vip answers ARP for 192.168.1.221 and writes it into this Service's
+# status; kube-proxy routes the address by that status. k3s's ServiceLB blanked
+# it when the node list changed (despite loadBalancerClass), and kube-vip only
+# writes it again when it re-elects, so from 2026-10-17 23:53 to 2026-10-19
+# Traefik's ServiceLB hostPort answered on the address instead, with its
+# self-signed default certificate, for every *.brick name. ServiceLB is now
+# disabled (README, "Front door on the cluster"), and kube-vip still empties
+# the status itself between losing and regaining the lease (each Caddy
+# rollout). externalIPs is in the spec, which only git (Argo CD) writes, so
+# kube-proxy routes the address here whatever the status says. scripts/validate
+# checks every kube-vip address is listed here too.
 apiVersion: v1
 kind: Service
 metadata:
@@ -157,6 +168,7 @@ metadata:
 spec:
   type: LoadBalancer
   loadBalancerClass: kube-vip.io/kube-vip-class
+  externalIPs: [192.168.1.221]
   externalTrafficPolicy: Cluster
   selector:
     app.kubernetes.io/name: caddy
