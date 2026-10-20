@@ -21,7 +21,7 @@ zaphod with key login and passwordless sudo on <host>. It does the README's
    overwatch's Wi-Fi capture (Node Feature Discovery labels the node)
 7. the k3s agent at the cluster's exact version, with the join token piped
    from the control plane over SSH, never printed or written here
-8. wait for Ready, then check node-exporter, promtail and svclb run on it
+8. wait for Ready, then check node-exporter and promtail run on it
 
 Exits 1 if any step or check fails.
 """
@@ -37,8 +37,8 @@ import time
 
 USER = "zaphod"
 SERVER = "brick420"  # the control plane, which holds the join token
-SERVER_URL = "https://192.168.1.183:6443"
-DAEMONSETS = ("prometheus-node-exporter", "promtail", "svclb-traefik")
+SERVER_URL = f"https://{SERVER}:6443"  # the API certificate covers the name
+DAEMONSETS = ("prometheus-node-exporter", "promtail")
 JOURNALD = """[Journal]
 Storage=persistent
 MaxRetentionSec=4day
