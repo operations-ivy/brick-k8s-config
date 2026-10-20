@@ -40,8 +40,8 @@ import urllib.request
 
 NAMESPACE = "whitepatrick"
 REPOS = ["wigle-sync", "wigle-console", "joke-reader", "joke-importer"]
-# Every k3s node: brick420, brick2000, brick666.
-NODES = ["192.168.1.183", "192.168.1.170", "192.168.1.171"]
+# Every k3s node, by name (the router's DNS; validate --cluster checks the list).
+NODES = ["brick420", "brick2000", "brick666"]
 SSH_USER = "zaphod"
 HUB = "https://hub.docker.com/v2"
 VERSION = re.compile(r"^\d+(\.\d+)*$")

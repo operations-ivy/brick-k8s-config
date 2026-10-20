@@ -102,9 +102,9 @@ class ValidateTests(unittest.TestCase):
             "helm release loki: no Argo CD Application of that name"])
 
     def test_node_list_drift(self):
-        self.assertEqual(validate.node_list_drift(["10.0.0.1", "10.0.0.2"], {"10.0.0.2", "10.0.0.1"}), [])
-        self.assertEqual(validate.node_list_drift(["10.0.0.1", "10.0.0.9"], {"10.0.0.1", "10.0.0.2"}),
-                         ["scripts/prune_images.py NODES: missing 10.0.0.2, not in the cluster 10.0.0.9"])
+        self.assertEqual(validate.node_list_drift(["a", "b"], {"b", "a"}), [])
+        self.assertEqual(validate.node_list_drift(["a", "z"], {"a", "b"}),
+                         ["scripts/prune_images.py NODES: missing b, not in the cluster z"])
 
     def test_kube_vip_address_also_in_external_ips(self):
         def svc(ips, external, cls=validate.KUBE_VIP_CLASS):

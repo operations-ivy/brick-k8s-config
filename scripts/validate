@@ -249,7 +249,7 @@ def check_health() -> list[str]:
     nodes = kget("nodes")
     control = {n["metadata"]["name"] for n in nodes
                if "node-role.kubernetes.io/control-plane" in n["metadata"].get("labels", {})}
-    live = {a["address"] for n in nodes for a in n["status"].get("addresses", []) if a["type"] == "InternalIP"}
+    live = {n["metadata"]["name"] for n in nodes}
     errors += node_list_drift(prune_nodes(), live)
     running = kget("pods", "-A", "--field-selector=status.phase=Running")
     errors += load_balancer_problems(kget("services", "-A"), running)

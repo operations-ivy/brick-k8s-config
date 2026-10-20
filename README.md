@@ -84,7 +84,7 @@ The manual steps, for when the scripts can't be used:
    kubectl wait --for=condition=Ready node/<worker-node> --timeout=180s
    ```
 
-The DaemonSets (node-exporter, promtail, Traefik's svclb) start on it by
+The DaemonSets (node-exporter, promtail, kube-vip) start on it by
 themselves, and brick9000's board picks it up from Prometheus. Running pods
 don't move to a new node on their own; to spread stateless ones onto it,
 cordon the other nodes, `kubectl rollout restart` the chosen deployments, and
