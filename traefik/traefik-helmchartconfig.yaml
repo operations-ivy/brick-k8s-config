@@ -17,9 +17,21 @@ spec:
     # name to this Service (front-door/caddy.yaml). k3s's ServiceLB used to
     # publish it on every node's ports 80 and 443; ServiceLB is disabled
     # because it fought kube-vip over the front door's address (README,
-    # "Front door on the cluster").
+    # "Front door on the cluster"). The chart takes the type under
+    # service.spec; a plain service.type is silently ignored.
     service:
-      type: ClusterIP
+      spec:
+        type: ClusterIP
+    # Every Ingress's status names the address it's reached at: the front
+    # door's. k3s turns on publishedService, which copies this Service's
+    # load-balancer address, and a ClusterIP has none, so Argo CD showed
+    # every app with an Ingress as Progressing.
+    providers:
+      kubernetesIngress:
+        publishedService:
+          enabled: false
+        ingressEndpoint:
+          ip: 192.168.1.221
     # Requests, durations and bytes per entrypoint, router and backend
     # service, for Prometheus (a metrics Service and a ServiceMonitor).
     metrics:
