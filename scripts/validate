@@ -11,6 +11,7 @@ Static:
   typo or a key a chart version dropped is a no-op nobody notices. The
   chart's own defaults, merged with its sub-charts', are the reference; the
   free-form blocks listed in validate.yaml aren't checked inside.
+- every kube-vip address is also in its Service's externalIPs
 
 --cluster (read-only; KUBECONFIG must point at the cluster):
 - every plain manifest passes `kubectl apply --dry-run=server`
@@ -20,6 +21,8 @@ Static:
 - health: every Deployment available, every PodDisruptionBudget allowing a
   disruption, and no pod but DaemonSets' on a control-plane node
 - scripts/prune_images.py's NODES lists exactly the cluster's nodes
+- kube-vip is the only load balancer: every LoadBalancer is its class, and
+  k3s's ServiceLB isn't running
 
 Exits 1 if anything fails. Needs PyYAML.
 """
@@ -182,6 +185,39 @@ def check_cluster(config: dict, mans: list[Path]) -> list[str]:
     return errors
 
 
+KUBE_VIP_CLASS = "kube-vip.io/kube-vip-class"
+
+
+def vip_problems(docs: list[dict]) -> list[str]:
+    """A kube-vip address must also be in the Service's externalIPs: kube-proxy
+    routes a LoadBalancer's address by its status, which kube-vip empties
+    between losing and regaining its lease (front-door/caddy.yaml)."""
+    errors = []
+    for d in docs:
+        if d.get("kind") != "Service":
+            continue
+        name = f"{d['metadata'].get('namespace', 'default')}/{d['metadata']['name']}"
+        ips = (d["metadata"].get("annotations") or {}).get("kube-vip.io/loadbalancerIPs", "")
+        missing = [ip for ip in ips.split(",") if ip and ip not in d["spec"].get("externalIPs", [])]
+        if missing:
+            errors.append(f"service {name}: kube-vip address {', '.join(missing)} not in spec.externalIPs")
+        if ips and d["spec"].get("loadBalancerClass") != KUBE_VIP_CLASS:
+            errors.append(f"service {name}: has a kube-vip address but not loadBalancerClass {KUBE_VIP_CLASS}")
+    return errors
+
+
+def load_balancer_problems(services: list[dict], pods: list[dict]) -> list[str]:
+    """kube-vip is the only load balancer: k3s's ServiceLB fought it over the
+    front door's address (README, "Front door on the cluster")."""
+    errors = [f"service {s['metadata']['namespace']}/{s['metadata']['name']}: a LoadBalancer without "
+              f"loadBalancerClass {KUBE_VIP_CLASS} (nothing serves it)"
+              for s in services if s["spec"].get("type") == "LoadBalancer"
+              and s["spec"].get("loadBalancerClass") != KUBE_VIP_CLASS]
+    if any(p["metadata"]["name"].startswith("svclb-") for p in pods):
+        errors.append("k3s ServiceLB is running (svclb- pods): `disable: [servicelb]` on brick420")
+    return errors
+
+
 def node_list_drift(listed: list[str], live: set[str]) -> list[str]:
     """prune_images.py keeps its own node list (it SSHes to each): flag it going stale."""
     missing, extra = sorted(live - set(listed)), sorted(set(listed) - live)
@@ -215,7 +251,9 @@ def check_health() -> list[str]:
                if "node-role.kubernetes.io/control-plane" in n["metadata"].get("labels", {})}
     live = {a["address"] for n in nodes for a in n["status"].get("addresses", []) if a["type"] == "InternalIP"}
     errors += node_list_drift(prune_nodes(), live)
-    for p in kget("pods", "-A", "--field-selector=status.phase=Running"):
+    running = kget("pods", "-A", "--field-selector=status.phase=Running")
+    errors += load_balancer_problems(kget("services", "-A"), running)
+    for p in running:
         owners = {o["kind"] for o in p["metadata"].get("ownerReferences", [])}
         if p["spec"].get("nodeName") in control and "DaemonSet" not in owners:
             errors.append(f"pod {p['metadata']['namespace']}/{p['metadata']['name']} runs on control plane "
@@ -229,7 +267,9 @@ def main() -> int:
     args = parser.parse_args()
     config = yaml.safe_load((ROOT / "validate.yaml").read_text())
     files, mans = yaml_files(), manifests(config)
-    errors = check_parse(files, mans) + check_releases(config)
+    errors = check_parse(files, mans)
+    docs = [] if errors else [d for p in mans for d in yaml.safe_load_all(p.read_text()) if isinstance(d, dict)]
+    errors += vip_problems(docs) + check_releases(config)
     if args.cluster:
         errors += check_cluster(config, mans)
     for e in errors:

@@ -20,7 +20,10 @@ curl -sfL https://get.k3s.io | sudo sh -s - server \
   --write-kubeconfig-mode 644
 ```
 
-k3s ships Traefik and ServiceLB by default — leave them enabled.
+k3s ships Traefik and ServiceLB by default. Keep Traefik; turn ServiceLB off
+(`disable: [servicelb]` in `/etc/rancher/k3s/config.yaml`, then
+`sudo systemctl restart k3s`): kube-vip is the only load balancer (see
+"Front door on the cluster").
 
 ```bash
 sudo cat /var/lib/rancher/k3s/server/node-token   # needed by the worker
@@ -378,10 +381,28 @@ ConfigMap. It forwards each name to Traefik's Service in the cluster;
   it if that worker goes (Lease election, gratuitous ARP on `wlan0`; a test
   failover lost about a second). So the router's DNS entries and the public
   record didn't change. It only handles Services of class
-  `kube-vip.io/kube-vip-class`; ServiceLB keeps Traefik's.
-- **Before anything else gets 192.168.1.221** (a replacement brick9000):
-  delete the `front-door` app or its Service first. Two hosts answering ARP
-  for one address is an outage.
+  `kube-vip.io/kube-vip-class`.
+- **kube-vip is the only load balancer.** k3s's ServiceLB is disabled on
+  brick420 and Traefik's Service is a ClusterIP (only Caddy reaches it).
+  ServiceLB blanked the front door's Service status whenever the node list
+  changed, despite its loadBalancerClass; kube-proxy then dropped its rules
+  for 192.168.1.221 and ServiceLB's own hostPort for Traefik answered
+  instead, with Traefik's self-signed default certificate. Every `*.brick`
+  name showed a certificate warning from 2026-10-17 23:53 until 2026-10-19.
+  The Service also lists the address in `externalIPs`, which kube-proxy
+  routes from the spec, because kube-vip itself empties the status between
+  losing and regaining its lease. `scripts/validate` checks both
+  (`--cluster` for ServiceLB).
+- **192.168.1.221 belongs to the front door, never to a host again.**
+  brick9000 comes back on an address of its own (brick-cicd-config README,
+  "When brick9000 comes back"). Hosts outside the cluster are reached by
+  name (`brick9000`, `brick1982`), which the router's DNS resolves from each
+  DHCP lease, so a host that moves needs no change here.
+- **FrontDoorDown** (critical) fires when the `front-door` scrape job fails
+  for 5 minutes. That job fetches Prometheus' own metrics through
+  `https://prometheus.brick.nozdormu.cloud`, the way a browser goes: router
+  DNS, the address, Caddy's certificate, Traefik. A wrong certificate, a
+  missing address or a second host answering ARP for it all fail it.
 - **The Porkbun API keys** are the `porkbun` SealedSecret
   (brick-k8s-secrets `front-door/`); the plaintext is in `~/.config/porkbun`
   on the laptop.

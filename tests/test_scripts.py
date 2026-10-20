@@ -106,6 +106,30 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(validate.node_list_drift(["10.0.0.1", "10.0.0.9"], {"10.0.0.1", "10.0.0.2"}),
                          ["scripts/prune_images.py NODES: missing 10.0.0.2, not in the cluster 10.0.0.9"])
 
+    def test_kube_vip_address_also_in_external_ips(self):
+        def svc(ips, external, cls=validate.KUBE_VIP_CLASS):
+            return {"kind": "Service", "metadata": {"name": "caddy", "namespace": "front-door",
+                                                    "annotations": {"kube-vip.io/loadbalancerIPs": ips}},
+                    "spec": {"type": "LoadBalancer", "loadBalancerClass": cls, "externalIPs": external}}
+        self.assertEqual(validate.vip_problems([svc("10.0.0.5", ["10.0.0.5"]), {"kind": "ConfigMap"}]), [])
+        self.assertEqual(validate.vip_problems([svc("10.0.0.5,10.0.0.6", ["10.0.0.5"])]),
+                         ["service front-door/caddy: kube-vip address 10.0.0.6 not in spec.externalIPs"])
+        self.assertEqual(validate.vip_problems([svc("10.0.0.5", ["10.0.0.5"], cls=None)]),
+                         ["service front-door/caddy: has a kube-vip address but not loadBalancerClass "
+                          "kube-vip.io/kube-vip-class"])
+
+    def test_kube_vip_is_the_only_load_balancer(self):
+        def svc(name, kind, cls=None):
+            return {"metadata": {"name": name, "namespace": "ns"}, "spec": {"type": kind, "loadBalancerClass": cls}}
+        pods = [{"metadata": {"name": "caddy-1"}}]
+        services = [svc("a", "ClusterIP"), svc("b", "LoadBalancer", validate.KUBE_VIP_CLASS)]
+        self.assertEqual(validate.load_balancer_problems(services, pods), [])
+        self.assertEqual(validate.load_balancer_problems([svc("traefik", "LoadBalancer")],
+                                                         pods + [{"metadata": {"name": "svclb-traefik-x"}}]),
+                         ["service ns/traefik: a LoadBalancer without loadBalancerClass kube-vip.io/kube-vip-class "
+                          "(nothing serves it)",
+                          "k3s ServiceLB is running (svclb- pods): `disable: [servicelb]` on brick420"])
+
     def test_unknown_keys_and_freeform_blocks(self):
         chart = {"a": {"b": 1, "c": {}}, "config": {"x": 1}}
         ours = {"a": {"b": 2, "typo": 3, "c": {"anything": 1}}, "config": {"free": 1}, "nope": 1}

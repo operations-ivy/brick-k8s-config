@@ -13,6 +13,13 @@ spec:
   valuesContent: |-
     deployment:
       replicas: 2
+    # Only reached inside the cluster: the front door's Caddy forwards every
+    # name to this Service (front-door/caddy.yaml). k3s's ServiceLB used to
+    # publish it on every node's ports 80 and 443; ServiceLB is disabled
+    # because it fought kube-vip over the front door's address (README,
+    # "Front door on the cluster").
+    service:
+      type: ClusterIP
     # Requests, durations and bytes per entrypoint, router and backend
     # service, for Prometheus (a metrics Service and a ServiceMonitor).
     metrics:

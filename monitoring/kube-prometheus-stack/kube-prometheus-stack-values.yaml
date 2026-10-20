@@ -141,11 +141,15 @@ prometheus:
     # Hosts outside the cluster (brick-cicd-config README, "Metrics"):
     # brick9000's node-exporter and Caddy, brick-status through the proxy (it
     # listens on localhost there), and brick1982's node-exporter and LCARS panel. The
-    # `instance` is the host's name, as node_uname_info's nodename.
+    # `instance` is the host's name, as node_uname_info's nodename. Targets
+    # are host names, which the router's DNS resolves from each host's DHCP
+    # lease, so a host that moves to a new address needs no change here. While
+    # brick9000 was away, its old address 192.168.1.221 (now the front door's)
+    # had this job scraping brick2000's node-exporter as "brick9000".
     additionalScrapeConfigs:
       - job_name: brick9000-node
         static_configs:
-          - targets: ["192.168.1.221:9100"]
+          - targets: ["brick9000:9100"]
             labels: {instance: brick9000}
       # The front door's Caddy, on the cluster since brick9000 died
       # (2026-10-17, brick-k8s-config front-door/).
@@ -153,6 +157,17 @@ prometheus:
         static_configs:
           - targets: ["caddy.front-door.svc.cluster.local:9180"]
             labels: {instance: front-door}
+      # The whole way in, as a browser takes it: DNS, 192.168.1.221 (kube-vip),
+      # Caddy's Let's Encrypt certificate, Traefik, then Prometheus itself.
+      # `up` is the result (FrontDoorDown); the samples duplicate the
+      # prometheus job's, so none are kept.
+      - job_name: front-door
+        scheme: https
+        static_configs:
+          - targets: ["prometheus.brick.nozdormu.cloud"]
+            labels: {instance: front-door}
+        metric_relabel_configs:
+          - {action: drop, source_labels: [__name__], regex: ".+"}
       - job_name: brick-status
         scheme: https
         static_configs:
@@ -160,12 +175,12 @@ prometheus:
             labels: {instance: brick9000}
       - job_name: brick1982-node
         static_configs:
-          - targets: ["192.168.1.222:9100"]
+          - targets: ["brick1982:9100"]
             labels: {instance: brick1982}
       # The LCARS panel (operations-ivy/rpi_lcars), which replaced brick-arena.
       - job_name: lcars
         static_configs:
-          - targets: ["192.168.1.222:8767"]
+          - targets: ["brick1982:8767"]
             labels: {instance: brick1982}
     # brick69 goes wardriving, out of reach for hours: a Prometheus agent on it
     # keeps scraping and remote-writes the backlog once it's home (wigle-sync's
@@ -317,3 +332,20 @@ additionalPrometheusRulesMap:
               severity: critical
             annotations:
               summary: "{{ $labels.instance }} is at {{ $value | printf \"%.1f\" }} °C, past the Pi's 80 °C throttle point"
+  # Every *.brick name goes through the front door (front-door/). From
+  # 2026-10-17 23:53 to 2026-10-19 it served Traefik's self-signed
+  # certificate instead of Caddy's and nothing noticed: the caddy job
+  # scrapes inside the cluster, so it stayed up. The front-door job takes
+  # the way a browser does, and fails on a wrong certificate, a missing
+  # address, or a second host answering for 192.168.1.221.
+  brick-front-door:
+    groups:
+      - name: brick-front-door
+        rules:
+          - alert: FrontDoorDown
+            expr: up{job="front-door"} == 0 or absent(up{job="front-door"})
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "https://*.brick.nozdormu.cloud has failed for 5 minutes: check the certificate (`openssl s_client`), front-door/caddy's EXTERNAL-IP and who answers ARP for 192.168.1.221"
