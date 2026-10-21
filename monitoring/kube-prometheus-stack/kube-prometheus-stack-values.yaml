@@ -75,6 +75,12 @@ kubeScheduler:
   enabled: false
 kubeEtcd:
   enabled: false
+# kube-proxy runs inside k3s on every node, but serves its metrics only on
+# 127.0.0.1:10249, so Prometheus found no targets and KubeProxyDown fired
+# (critical) from 2026-10-04, though kube-proxy was fine. Off: no
+# ServiceMonitor, no kube-proxy rules.
+kubeProxy:
+  enabled: false
 
 nodeExporter:
   enabled: true
