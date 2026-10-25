@@ -1,0 +1,18 @@
+# The Strimzi cluster operator: it runs the Kafka cluster in brick-kafka
+# (kafka/kafka.yaml) from the Kafka and KafkaNodePool resources there. In its
+# own namespace (wigle-sync#21), watching only brick-kafka.
+
+watchNamespaces:
+  - brick-kafka
+
+# Stateless: off brick2000 where it can be (docs: placement), never brick420
+# (no toleration for its taint).
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      preference:
+        matchExpressions:
+        - key: chuck.io/storage-node
+          operator: NotIn
+          values: ["true"]

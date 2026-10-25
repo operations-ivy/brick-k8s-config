@@ -301,6 +301,27 @@ retired.)
   kubectl apply -f nfd/node-feature-rules.yaml
   ```
 
+- `strimzi/` and `kafka/` — Kafka on the cluster, through the
+  [Strimzi](https://strimzi.io) operator (1.3.0, Kafka 4.3.1), both Argo CD
+  apps. `strimzi/`: the operator's values; it runs in `strimzi` and watches
+  only `brick-kafka`, and its chart brings the Kafka CRDs (`apps/strimzi.yaml`,
+  server-side apply: they're too big for client-side). `kafka/kafka.yaml`: the
+  cluster, KRaft with three combined controller and broker nodes (one
+  `KafkaNodePool`), 5Gi each, all on brick2000 because their volumes are
+  local-path; the entity operator (topics and users) runs off it.
+  `apps/kafka.yaml` retries until the CRDs exist, so a fresh cluster
+  converges in either order. Clients use
+  `kafka-kafka-bootstrap.brick-kafka.svc` (9092 plain, 9093 TLS). Topics and
+  users are `KafkaTopic` and `KafkaUser` resources in `brick-kafka`. Without
+  Argo:
+
+  ```bash
+  kubectl apply -f strimzi/strimzi-namespace.yaml -f kafka/kafka-namespace.yaml
+  helm upgrade --install strimzi oci://quay.io/strimzi-helm/strimzi-kafka-operator --version 1.3.0 \
+    --namespace strimzi -f strimzi/strimzi-values.yaml
+  kubectl apply -f kafka/kafka.yaml
+  ```
+
 - `traefik/` — overrides for the Traefik k3s installs itself, as a
   `HelmChartConfig` that k3s's Helm controller merges into its chart: two
   replicas spread across the workers (never brick420), with a `PodDisruptionBudget` (`minAvailable:

@@ -1,0 +1,36 @@
+# The Kafka cluster in brick-kafka (kafka/kafka.yaml), run by the Strimzi
+# operator (apps/strimzi.yaml). Its namespace comes from cluster-manifests.
+#
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here. The brokers' volumes
+# are Strimzi's, not Argo's, and outlive the cluster (deleteClaim: false).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka
+  namespace: argocd
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+    targetRevision: main
+    path: kafka
+    directory:
+      include: kafka.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: brick-kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # On a fresh cluster this can sync before the strimzi app has made the
+      # CRDs; the retries below wait for them.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
