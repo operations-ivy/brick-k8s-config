@@ -1,5 +1,6 @@
-# The Kafka cluster in brick-kafka (kafka/kafka.yaml), run by the Strimzi
-# operator (apps/strimzi.yaml). Its namespace comes from cluster-manifests.
+# The Kafka cluster in brick-kafka (kafka/kafka.yaml) and its topics
+# (kafka/topic-*.yaml), run by the Strimzi operator (apps/strimzi.yaml). Its
+# namespace comes from cluster-manifests.
 #
 # Automated (#42): a merge to main is a deploy, a hand-made change is put
 # back, and an object deleted from git is deleted here. The brokers' volumes
@@ -16,7 +17,8 @@ spec:
     targetRevision: main
     path: kafka
     directory:
-      include: kafka.yaml
+      # The cluster and its topics; the namespace is cluster-manifests'.
+      include: "{kafka.yaml,topic-*.yaml}"
   destination:
     server: https://kubernetes.default.svc
     namespace: brick-kafka

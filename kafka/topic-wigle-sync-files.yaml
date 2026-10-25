@@ -1,0 +1,20 @@
+# wigle-sync's ledger of uploaded files (wigle-sync#21): one record per
+# .wiglecsv, keyed by the SHA-256 of its bytes, so the newest record per key
+# is all that matters: compacted, kept forever. One partition: a few hundred
+# records a year. Replicated three ways, two in sync to acknowledge a write
+# (the cluster's min.insync.replicas).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: wigle-sync.files
+  namespace: brick-kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 1
+  replicas: 3
+  config:
+    cleanup.policy: compact
+    retention.ms: -1
+    min.compaction.lag.ms: 3600000
+    segment.bytes: 1048576

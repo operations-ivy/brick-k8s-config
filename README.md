@@ -312,8 +312,9 @@ retired.)
   `apps/kafka.yaml` retries until the CRDs exist, so a fresh cluster
   converges in either order. Clients use
   `kafka-kafka-bootstrap.brick-kafka.svc` (9092 plain, 9093 TLS). Topics and
-  users are `KafkaTopic` and `KafkaUser` resources in `brick-kafka`. Without
-  Argo:
+  users are `KafkaTopic` and `KafkaUser` resources in `brick-kafka`: so far
+  `wigle-sync.files` (`kafka/topic-wigle-sync-files.yaml`), wigle-sync's
+  compacted ledger of uploads (wigle-sync#21). Without Argo:
 
   ```bash
   kubectl apply -f strimzi/strimzi-namespace.yaml -f kafka/kafka-namespace.yaml
