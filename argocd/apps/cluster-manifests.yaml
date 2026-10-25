@@ -1,6 +1,6 @@
 # brick-k8s-config's plain manifests: the Kubernetes Dashboard, the
 # monitoring ingresses and Grafana dashboards, the NFD rules, and the
-# namespaces. Not argocd/ (Argo's own app and the app list), Helm values,
+# namespaces (Strimzi's and Kafka's among them). Not argocd/ (Argo's own app and the app list), Helm values,
 # validate.yaml, debug/ (applied by hand only while debugging), or
 # traefik/ (k3s's own add-on config stays with k3s, #42).
 #
@@ -19,7 +19,7 @@ spec:
     path: .
     directory:
       recurse: true
-      include: '{dashboard/*.yaml,monitoring/*.yaml,monitoring/dashboards/*.yaml,nfd/nfd-namespace.yaml,nfd/node-feature-rules.yaml,secrets/sealed-secrets-namespace.yaml}'
+      include: '{dashboard/*.yaml,monitoring/*.yaml,monitoring/dashboards/*.yaml,nfd/nfd-namespace.yaml,nfd/node-feature-rules.yaml,secrets/sealed-secrets-namespace.yaml,strimzi/strimzi-namespace.yaml,kafka/kafka-namespace.yaml}'
   destination:
     server: https://kubernetes.default.svc
   # The Dashboard writes its own CSRF key into this Secret at start (as

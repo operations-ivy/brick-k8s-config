@@ -1,0 +1,35 @@
+# The strimzi Helm release (the Strimzi cluster operator): chart pinned here,
+# values from git (strimzi/strimzi-values.yaml). Bump the chart here and in
+# validate.yaml together. Chart from Strimzi's OCI registry (no oci:// prefix
+# for Argo). It brings the Kafka CRDs, which kafka/ (apps/kafka.yaml) needs.
+#
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strimzi
+  namespace: argocd
+spec:
+  project: platform
+  sources:
+    - repoURL: quay.io/strimzi-helm
+      chart: strimzi-kafka-operator
+      targetRevision: 1.3.0
+      helm:
+        releaseName: strimzi
+        valueFiles:
+          - $values/strimzi/strimzi-values.yaml
+    - repoURL: https://github.com/operations-ivy/brick-k8s-config.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: strimzi
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Strimzi's CRDs are too big for client-side apply.
+      - ServerSideApply=true
