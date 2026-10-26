@@ -355,3 +355,22 @@ additionalPrometheusRulesMap:
               severity: critical
             annotations:
               summary: "https://*.brick.nozdormu.cloud has failed for 5 minutes: check the certificate (`openssl s_client`), front-door/caddy's EXTERNAL-IP and who answers ARP for 192.168.1.221"
+  # The bedroom's SHT35 is read on brick1982 (rpi_lcars) and copied into
+  # Home Assistant. HA started while brick1982 was off on 2026-10-23 and its
+  # copy stayed unavailable for three days with the sensor fine and nothing
+  # noticing (home-assistant#9). HA's watchdog now restarts it after 15
+  # minutes; this fires if that didn't work. An absent HA series counts as
+  # unavailable (a platform that never set up has no entity).
+  brick-home-assistant:
+    groups:
+      - name: brick-home-assistant
+        rules:
+          - alert: BedroomSensorMissingInHomeAssistant
+            expr: |
+              lcars_room_sensor_up == 1
+              unless on() (hass_entity_available{entity="sensor.bedroom_temperature"} == 1)
+            for: 30m
+            labels:
+              severity: warning
+            annotations:
+              summary: "brick1982's room sensor has read for 30 minutes but Home Assistant's sensor.bedroom_temperature is unavailable: its watchdog didn't fix it; kubectl -n home-assistant rollout restart deploy/home-assistant"
