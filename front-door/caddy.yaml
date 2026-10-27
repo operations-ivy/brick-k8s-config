@@ -30,6 +30,14 @@ data:
     (traefik) {
     	reverse_proxy traefik.kube-system.svc.cluster.local:80
     }
+    # brick-status on brick9000 (by address: pods can't resolve the router's
+    # bare host names). When brick9000 is down: the hosts dashboard in Grafana
+    # for status, a 503 for volume.
+    (brick9000) {
+    	reverse_proxy 192.168.1.224:8765 {
+    		lb_try_duration 2s
+    	}
+    }
     *.brick.nozdormu.cloud {
     	tls {
     		dns porkbun {
@@ -37,17 +45,19 @@ data:
     			api_secret_key {file./run/secrets/porkbun/secret_key}
     		}
     	}
-    	# The board's web mirror ran on brick9000 (brick-status): the hosts
-    	# dashboard in Grafana stands in for it. When brick9000 is back on its
-    	# new address, status and volume can go to its brick-status again.
+    	# The board's read-only mirror: brick-status on brick9000 (back on
+    	# 192.168.1.224 since 2026-10-26), outside the cluster. It sees the
+    	# X-Forwarded-For Caddy adds and never starts a cmatrix of its own.
     	@status host status.brick.nozdormu.cloud
     	handle @status {
-    		redir https://grafana.brick.nozdormu.cloud/d/brick-hosts 302
+    		import brick9000
     	}
-    	# brick9000's speaker: nothing to stand in for it.
+    	# brick9000's speaker volume: brick-status's volume page, the only name
+    	# it accepts volume changes through (its web.py, VOLUME_HOST).
     	@volume host volume.brick.nozdormu.cloud
     	handle @volume {
-    		respond "brick9000 is down (hardware); its speaker's volume page comes back with it." 503
+    		rewrite / /volume
+    		import brick9000
     	}
     	# The Kubernetes Dashboard is only on Traefik's HTTPS entrypoint, behind
     	# a self-signed certificate; pass the name on explicitly.
@@ -67,6 +77,29 @@ data:
     	}
     	handle {
     		respond "No app here" 404
+    	}
+    	# brick9000 down: only status and volume; other names keep their errors.
+    	handle_errors 502 503 504 {
+    		@status_down host status.brick.nozdormu.cloud
+    		handle @status_down {
+    			redir https://grafana.brick.nozdormu.cloud/d/brick-hosts 302
+    		}
+    		@volume_down host volume.brick.nozdormu.cloud
+    		handle @volume_down {
+    			respond "brick9000 is down; its speaker's volume page comes back with it." 503
+    		}
+    	}
+    }
+    # The volume dial (brick-cicd-config volume-dial/) reads and sets the
+    # volume over plain HTTP: an ESP32 takes ~2.7 s per TLS handshake, and
+    # ESPHome's requests block the dial while they run. Only the API, only on
+    # the LAN; the page itself still redirects to HTTPS.
+    http://volume.brick.nozdormu.cloud {
+    	handle /api/volume {
+    		import brick9000
+    	}
+    	handle {
+    		redir https://{host}{uri} 308
     	}
     }
     http://*.brick.nozdormu.cloud {
@@ -107,7 +140,7 @@ spec:
         app.kubernetes.io/name: caddy
       annotations:
         # Restart when the Caddyfile changes (bump by hand with it).
-        brick/caddyfile-rev: "2"
+        brick/caddyfile-rev: "3"
     spec:
       nodeSelector:
         chuck.io/storage-node: "true"
