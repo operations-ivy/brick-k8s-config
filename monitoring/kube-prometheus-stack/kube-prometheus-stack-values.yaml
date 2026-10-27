@@ -120,14 +120,17 @@ prometheus-node-exporter:
   service:
     port: 19100
     targetPort: 19100
+  # No CPU limit. It averages 2-6m, but each scrape runs its collectors in
+  # parallel on all four cores (the systemd one walks ~700 units), and a
+  # limit throttles those bursts: 27-35% of periods at 250m, the same as at
+  # 100m (CPUThrottlingHigh, scrapes 0.2-0.4 s). The request keeps it fairly
+  # scheduled.
   resources:
     requests:
       memory: 50Mi
       cpu: 50m
     limits:
       memory: 100Mi
-      # Was 100m and throttled 23-36% of the time on scrape.
-      cpu: 250m
 
 prometheus:
   enabled: true
