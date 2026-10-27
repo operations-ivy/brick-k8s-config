@@ -100,6 +100,10 @@ prometheus-node-exporter:
     - --collector.systemd
     - --collector.systemd.enable-restarts-metrics
     - --collector.systemd.unit-include=.+\.(service|timer)
+    # brick2000's influxdb.service always fails at boot: pironman5 starts its
+    # own influxd first and holds the port. pironman5 and its InfluxDB are
+    # hands off (homelab-context hosts.md), so it's left out here instead.
+    - --collector.systemd.unit-exclude=influxdb\.service
     # Every node is on Wi-Fi: signal, bitrate and retries to the router.
     - --collector.wifi
     # Hosts' own reports, for whatever a node writes here (brick1982's
