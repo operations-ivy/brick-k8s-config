@@ -13,10 +13,10 @@ spec:
     repoURL: https://github.com/operations-ivy/wigle-sync.git
     targetRevision: main
     path: k8s_config
-    directory:
-      recurse: true
-      # The Grafana dashboards' .json sources sit beside their ConfigMaps.
-      exclude: '{*.json,**/*.json}'
+    # Rendered with Kustomize: k8s_config/kustomization.yaml single-sources the
+    # image tags. It lists only the manifests, so the dashboards' .json sources
+    # beside the ConfigMaps are ignored without needing a directory exclude.
+    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: wigle

@@ -1,6 +1,7 @@
 # The reader and Postgres (its PVC is on brick2000). From operations-ivy/chucks-wisdom's k8s_config/ on main.
-# The importer Job is left out: Jenkins' chuck-importer job creates it and it
-# deletes itself 10 minutes after finishing, so Argo would keep recreating it.
+# The importer Job is left out (absent from k8s_config/kustomization.yaml's
+# resources): Jenkins' chuck-importer job creates it and it deletes itself 10
+# minutes after finishing, so Argo would keep recreating it.
 #
 # Automated (#42): a merge to main is a deploy, a hand-made change is put
 # back, and an object deleted from git is deleted here.
@@ -15,10 +16,11 @@ spec:
     repoURL: https://github.com/operations-ivy/chucks-wisdom.git
     targetRevision: main
     path: k8s_config
-    directory:
-      recurse: true
-      # The Grafana dashboards' .json sources sit beside their ConfigMaps.
-      exclude: '{*.json,**/*.json,importer/importer-job.yaml}'
+    # Rendered with Kustomize: k8s_config/kustomization.yaml single-sources the
+    # reader's image tag and lists only the manifests Argo should manage, so
+    # the dashboards' .json sources and the importer Job are left out without a
+    # directory exclude.
+    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: chuck
