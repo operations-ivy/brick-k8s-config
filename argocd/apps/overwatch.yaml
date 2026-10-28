@@ -13,8 +13,10 @@ spec:
     repoURL: https://github.com/operations-ivy/overwatch.git
     targetRevision: main
     path: k8s_config
-    directory:
-      recurse: true
+    # Rendered with Kustomize: k8s_config/kustomization.yaml single-sources the
+    # image tag. Not directory mode - that would apply the kustomization.yaml
+    # itself as a manifest and fail on its unknown GVK.
+    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: overwatch
