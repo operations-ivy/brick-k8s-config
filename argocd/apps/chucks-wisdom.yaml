@@ -1,7 +1,8 @@
 # The reader and Postgres (its PVC is on brick2000). From operations-ivy/chucks-wisdom's k8s_config/ on main.
-# The importer Job is left out (absent from k8s_config/kustomization.yaml's
-# resources): Jenkins' chuck-importer job creates it and it deletes itself 10
-# minutes after finishing, so Argo would keep recreating it.
+# The importer is a suspended CronJob in the kustomization: Argo manages it but
+# it never fires on a schedule. Jenkins' chuck-importer job starts a one-shot
+# Job from it (like wigle-sync-now); that Job self-deletes 10 minutes after
+# finishing. (A plain Job here would be recreated by Argo in a loop.)
 #
 # Automated (#42): a merge to main is a deploy, a hand-made change is put
 # back, and an object deleted from git is deleted here.
