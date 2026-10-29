@@ -13,10 +13,11 @@ spec:
     repoURL: https://github.com/operations-ivy/overwatch.git
     targetRevision: main
     path: k8s_config
-    # Rendered with Kustomize: k8s_config/kustomization.yaml single-sources the
+    # Rendered with Kustomize, which Argo detects from k8s_config/kustomization.yaml.
+    # No `kustomize: {}` here: the API server drops the empty object, so root
+    # would see a diff it can never sync. The kustomization single-sources the
     # image tag. Not directory mode - that would apply the kustomization.yaml
     # itself as a manifest and fail on its unknown GVK.
-    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: overwatch
