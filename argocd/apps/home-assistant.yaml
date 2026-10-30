@@ -13,8 +13,11 @@ spec:
     repoURL: https://github.com/operations-ivy/home-assistant.git
     targetRevision: main
     path: k8s_config
-    directory:
-      recurse: true
+    # Rendered with Kustomize, which Argo detects from k8s_config/kustomization.yaml:
+    # it generates HA's config ConfigMap with a content hash in its name, so a
+    # config change rolls HA. No `kustomize: {}` here (the API server drops the
+    # empty object and root would diff forever), and no `directory:` (that would
+    # apply the kustomization and ha/*.yaml as manifests).
   destination:
     server: https://kubernetes.default.svc
     namespace: home-assistant
