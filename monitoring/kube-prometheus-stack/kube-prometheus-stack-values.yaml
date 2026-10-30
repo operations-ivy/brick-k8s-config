@@ -377,3 +377,18 @@ additionalPrometheusRulesMap:
               severity: warning
             annotations:
               summary: "brick1982's room sensor has read for 30 minutes but Home Assistant's sensor.bedroom_temperature is unavailable: its watchdog didn't fix it; kubectl -n home-assistant rollout restart deploy/home-assistant"
+          # A Google timeout burst (2026-10-27) hung HA's Google Calendar
+          # integration for three days, silently; only a restart fixed it.
+          # HA's calendar watchdog now restarts it after 45 minutes (at most
+          # every 2 hours); this fires if that didn't work, or Google itself
+          # has been down for hours. A calendar that never set up has no
+          # series, so it counts as unavailable.
+          - alert: GoogleCalendarMissingInHomeAssistant
+            expr: |
+              up{job="home-assistant/home-assistant"} == 1
+              unless on() (max(hass_entity_available{domain="calendar"}) == 1)
+            for: 3h
+            labels:
+              severity: warning
+            annotations:
+              summary: "Home Assistant is up but no calendar has been available for 3 hours: its watchdog didn't fix it; check the Google Calendar integration, then delete the home-assistant pod"
