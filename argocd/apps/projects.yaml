@@ -17,6 +17,7 @@ spec:
     - https://argoproj.github.io/argo-helm
     - https://prometheus-community.github.io/helm-charts
     - https://grafana.github.io/helm-charts
+    - https://grafana-community.github.io/helm-charts
     - https://open-telemetry.github.io/opentelemetry-helm-charts
     - https://kubernetes-sigs.github.io/node-feature-discovery/charts
     - registry-1.docker.io/bitnamicharts

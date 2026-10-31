@@ -3,7 +3,7 @@
 releases:
   - {name: kube-prometheus-stack, namespace: monitoring, chart: prometheus-community/kube-prometheus-stack, version: 91.5.0, values: monitoring/kube-prometheus-stack/kube-prometheus-stack-values.yaml}
   - {name: loki, namespace: monitoring, chart: grafana/loki, version: 7.3.0, values: monitoring/loki/loki-values.yaml}
-  - {name: tempo, namespace: monitoring, chart: grafana/tempo, version: 1.24.4, values: monitoring/tempo/tempo-values.yaml}
+  - {name: tempo, namespace: monitoring, chart: grafana-community/tempo, version: 2.4.0, values: monitoring/tempo/tempo-values.yaml}
   - {name: otel-collector, namespace: monitoring, chart: open-telemetry/opentelemetry-collector, version: 0.173.1, values: monitoring/otel-collector/otel-collector-values.yaml}
   - {name: promtail, namespace: monitoring, chart: grafana/promtail, version: 6.17.1, values: monitoring/promtail/promtail-values.yaml}
   - {name: pushgateway, namespace: monitoring, chart: prometheus-community/prometheus-pushgateway, version: 3.9.0, values: monitoring/pushgateway/pushgateway-values.yaml}
