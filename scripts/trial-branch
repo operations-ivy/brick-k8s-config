@@ -2,6 +2,7 @@
 """Try a branch on the cluster before merging, with Argo CD (#42).
 
     scripts/trial-branch overwatch my-branch   # overwatch follows my-branch
+    scripts/trial-branch overwatch feature/x --dev   # with the branch head's dev- images
     scripts/trial-branch overwatch main        # back to main (after the merge)
     scripts/trial-branch --list                # which apps are on a branch
 
@@ -11,6 +12,10 @@ values of a Helm release (the chart stays pinned). Self-heal then keeps it
 on the branch, and root leaves the change alone (root.yaml ignores
 targetRevision and the trial label), so the branch is what runs until it's
 put back.
+
+--dev runs the images brick-cicd-config's build-branches built from the head
+of a feature/* branch: their dev-<commit> tag can't be in the commit itself, so
+it's set on the Application. Run it again after a new push.
 
 It labels the Application brick-trial=true, with the branch in an
 annotation, and ArgoAppOnBranch alerts if one is still on a branch after a
@@ -23,10 +28,19 @@ import argparse
 import json
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 
 LABEL = "brick-trial"
 ANNOTATION = "brick-trial-branch"
 GIT = "https://github.com/"
+HUB_REPO = "whitepatrick"
+# Each app's images, as in its kustomization.yaml.
+IMAGES = {
+    "chucks-wisdom": ["joke-importer", "joke-reader"],
+    "overwatch": ["overwatch"],
+    "wigle-sync": ["wigle-console", "wigle-sync"],
+}
 
 
 def kubectl(*args: str, input: str | None = None) -> str:
@@ -48,9 +62,31 @@ def git_source(app: dict) -> str:
     raise SystemExit(f"{app['metadata']['name']}: no git source to point at a branch")
 
 
-def patch(app: dict, branch: str) -> list[dict]:
-    """A JSON patch that puts `app` on `branch` (main: back to normal)."""
+def dev_images(name: str, source: str, branch: str) -> list[str]:
+    """The branch head's dev- images, checked to be on Docker Hub."""
+    if name not in IMAGES:
+        raise SystemExit(f"{name}: no images of its own to try")
+    out = subprocess.run(["git", "ls-remote", source, f"refs/heads/{branch}"], capture_output=True, text=True)
+    if out.returncode or not out.stdout:
+        raise SystemExit(f"no branch {branch} on {source}")
+    tag = "dev-" + out.stdout.split()[0][:12]
+    for image in IMAGES[name]:
+        try:
+            urllib.request.urlopen(f"https://hub.docker.com/v2/repositories/{HUB_REPO}/{image}/tags/{tag}", timeout=20)
+        except urllib.error.HTTPError as e:
+            raise SystemExit(f"{image}:{tag} isn't on Docker Hub ({e.code}): still building?") from e
+    return [f"{HUB_REPO}/{image}:{tag}" for image in IMAGES[name]]
+
+
+def patch(app: dict, branch: str, images: list[str] | None = None) -> list[dict]:
+    """A JSON patch that puts `app` on `branch` (main: back to normal), with
+    `images` overriding its kustomization's tags."""
     ops = [{"op": "replace", "path": git_source(app), "value": branch}]
+    source = app["spec"].get("source") or {}
+    if images:
+        ops.append({"op": "add", "path": "/spec/source/kustomize", "value": {"images": images}})
+    elif "kustomize" in source:
+        ops.append({"op": "remove", "path": "/spec/source/kustomize"})
     md = app["metadata"]
     labels, notes = md.get("labels") or {}, md.get("annotations") or {}
     if branch == "main":
@@ -73,6 +109,7 @@ def main() -> int:
     parser.add_argument("app", nargs="?", help="the Application (argocd/apps/<app>.yaml)")
     parser.add_argument("branch", nargs="?", help="the branch to follow, or main")
     parser.add_argument("--list", action="store_true", help="list the apps on a branch")
+    parser.add_argument("--dev", action="store_true", help="run the branch head's dev- images")
     args = parser.parse_args()
     if args.list:
         apps = json.loads(kubectl("get", "applications", "-o", "json"))["items"]
@@ -86,10 +123,12 @@ def main() -> int:
     if not (args.app and args.branch):
         parser.error("give an app and a branch (or --list)")
     app = json.loads(kubectl("get", "application", args.app, "-o", "json"))
-    kubectl("patch", "application", args.app, "--type", "json", "-p", json.dumps(patch(app, args.branch)))
+    images = dev_images(args.app, app["spec"]["source"]["repoURL"], args.branch) if args.dev else None
+    kubectl("patch", "application", args.app, "--type", "json", "-p", json.dumps(patch(app, args.branch, images)))
     kubectl("annotate", "application", args.app, "argocd.argoproj.io/refresh=hard", "--overwrite")
     where = "main again" if args.branch == "main" else f"branch {args.branch}"
-    print(f"{args.app} now follows {where}; Argo CD syncs it within a few seconds")
+    print(f"{args.app} now follows {where}{' with ' + ', '.join(images) if images else ''}; "
+          "Argo CD syncs it within a few seconds")
     return 0
 
 
