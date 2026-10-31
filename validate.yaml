@@ -6,6 +6,7 @@ releases:
   - {name: tempo, namespace: monitoring, chart: grafana/tempo, version: 1.24.4, values: monitoring/tempo/tempo-values.yaml}
   - {name: otel-collector, namespace: monitoring, chart: open-telemetry/opentelemetry-collector, version: 0.173.1, values: monitoring/otel-collector/otel-collector-values.yaml}
   - {name: promtail, namespace: monitoring, chart: grafana/promtail, version: 6.17.1, values: monitoring/promtail/promtail-values.yaml}
+  - {name: alloy, namespace: monitoring, chart: grafana/alloy, version: 1.15.0, values: monitoring/alloy/alloy-values.yaml}
   - {name: pushgateway, namespace: monitoring, chart: prometheus-community/prometheus-pushgateway, version: 3.9.0, values: monitoring/pushgateway/pushgateway-values.yaml}
   - {name: node-feature-discovery, namespace: node-feature-discovery, chart: nfd/node-feature-discovery, version: 0.19.0, values: nfd/nfd-values.yaml}
   - {name: argocd, namespace: argocd, chart: argo/argo-cd, version: 10.10.5, values: argocd/argocd-values.yaml}

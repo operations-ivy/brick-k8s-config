@@ -1,0 +1,145 @@
+# Alloy replaces Promtail (past end of life since 2026-03-02, #55): the same
+# job on every node, pod logs to Loki under the same labels, so dashboards and
+# LogQL queries keep working. The relabel rules are the Promtail chart's.
+alloy:
+  configMap:
+    content: |
+      discovery.kubernetes "pods" {
+        role = "pod"
+        selectors {
+          role  = "pod"
+          field = "spec.nodeName=" + sys.env("NODE_NAME")
+        }
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_controller_name"]
+          regex         = "([0-9a-z-.]+?)(-[0-9a-f]{8,10})?"
+          target_label  = "__tmp_controller_name"
+        }
+        rule {
+          source_labels = [
+            "__meta_kubernetes_pod_label_app_kubernetes_io_name",
+            "__meta_kubernetes_pod_label_app",
+            "__tmp_controller_name",
+            "__meta_kubernetes_pod_name",
+          ]
+          regex        = "^;*([^;]+)(;.*)?$"
+          target_label = "app"
+        }
+        rule {
+          source_labels = [
+            "__meta_kubernetes_pod_label_app_kubernetes_io_instance",
+            "__meta_kubernetes_pod_label_instance",
+          ]
+          regex        = "^;*([^;]+)(;.*)?$"
+          target_label = "instance"
+        }
+        rule {
+          source_labels = [
+            "__meta_kubernetes_pod_label_app_kubernetes_io_component",
+            "__meta_kubernetes_pod_label_component",
+          ]
+          regex        = "^;*([^;]+)(;.*)?$"
+          target_label = "component"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node_name"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["namespace", "app"]
+          separator     = "/"
+          target_label  = "job"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          replacement   = "/var/log/pods/*$1/*.log"
+          target_label  = "__path__"
+        }
+        rule {
+          source_labels = [
+            "__meta_kubernetes_pod_annotationpresent_kubernetes_io_config_hash",
+            "__meta_kubernetes_pod_annotation_kubernetes_io_config_hash",
+            "__meta_kubernetes_pod_container_name",
+          ]
+          separator    = "/"
+          regex        = "true/(.*)"
+          replacement  = "/var/log/pods/*$1/*.log"
+          target_label = "__path__"
+        }
+      }
+
+      local.file_match "pods" {
+        path_targets = discovery.relabel.pods.output
+      }
+
+      loki.source.file "pods" {
+        targets       = local.file_match.pods.targets
+        forward_to    = [loki.process.pods.receiver]
+        tail_from_end = true
+      }
+
+      loki.process "pods" {
+        stage.cri {}
+        forward_to = [loki.write.loki.receiver]
+      }
+
+      loki.write "loki" {
+        endpoint {
+          url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+  # Read positions survive a restart, as Promtail's did in /run/promtail.
+  storagePath: /run/alloy
+  extraEnv:
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+  mounts:
+    varlog: true
+    extra:
+      - name: run
+        mountPath: /run/alloy
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 256Mi
+      cpu: 200m
+
+controller:
+  type: daemonset
+  # Every node has logs, the tainted control plane too.
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  volumes:
+    extra:
+      - name: run
+        hostPath:
+          path: /run/alloy
+
+# Alloy's own metrics: lines read and sent, send errors.
+serviceMonitor:
+  enabled: true
