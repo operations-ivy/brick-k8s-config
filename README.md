@@ -248,7 +248,9 @@ retired.)
   pattern as Loki, on `brick2000`. Install:
 
   ```bash
-  helm upgrade --install tempo grafana/tempo --version 1.24.4 \
+  helm repo add grafana-community https://grafana-community.github.io/helm-charts
+  helm repo update
+  helm upgrade --install tempo grafana-community/tempo --version 2.4.0 \
     --namespace monitoring -f monitoring/tempo/tempo-values.yaml
   ```
 
