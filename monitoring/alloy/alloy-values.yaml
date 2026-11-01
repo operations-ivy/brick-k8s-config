@@ -1,6 +1,7 @@
-# Alloy replaces Promtail (past end of life since 2026-03-02, #55): the same
-# job on every node, pod logs to Loki under the same labels, so dashboards and
-# LogQL queries keep working. The relabel rules are the Promtail chart's.
+# Alloy took over from Promtail (end of life 2026-03-02, #55): every node sends its
+# pods' logs to Loki under Promtail's labels, so dashboards and LogQL queries
+# kept working. The relabel rules are the Promtail chart's.
+# Every line then gets one shape (loki.process "levels", #74).
 alloy:
   configMap:
     content: |
@@ -98,6 +99,124 @@ alloy:
 
       loki.process "pods" {
         stage.cri {}
+        forward_to = [loki.process.levels.receiver]
+      }
+
+      // Each node's journal, as `host` and `unit`. pironman5 logs every sensor
+      // write in debug mode (9 MB an hour, more than everything else together).
+      loki.relabel "journal" {
+        forward_to = []
+        rule {
+          source_labels = ["__journal__systemd_unit"]
+          regex         = "pironman5\\.service"
+          action        = "drop"
+        }
+        rule {
+          source_labels = ["__journal__systemd_unit"]
+          target_label  = "unit"
+        }
+        rule {
+          source_labels = ["__journal__hostname"]
+          target_label  = "host"
+        }
+        rule {
+          source_labels = ["__journal_priority_keyword"]
+          target_label  = "level"
+        }
+      }
+
+      loki.source.journal "host" {
+        path          = "/var/log/journal"
+        max_age       = "12h"
+        labels        = {job = "journal"}
+        relabel_rules = loki.relabel.journal.rules
+        forward_to    = [loki.process.levels.receiver]
+      }
+
+      // One shape for every source (#74). A `level` label, lowercase, from
+      // whichever of Loki's formats the line is in; `logger` and `trace_id` as
+      // structured metadata, so they stay out of the stream labels.
+      loki.process "levels" {
+        // Traefik and Home Assistant colour their logs.
+        stage.replace {
+          expression = "(\\x1b\\[[0-9;]*[A-Za-z])"
+        }
+
+        // Home Assistant splits a traceback across entries; each of its lines
+        // that starts an entry starts with a date.
+        stage.match {
+          selector = "{namespace=\"home-assistant\"}"
+          stage.multiline {
+            firstline     = "^\\d{4}-\\d{2}-\\d{2} "
+            max_wait_time = "3s"
+            max_lines     = 200
+          }
+        }
+
+        // JSON: our services, Caddy.
+        stage.match {
+          selector = "{job=~\".+\"} |~ \"^\\\\s*\\\\{\""
+          stage.json {
+            expressions = {level = "level", logger = "logger", trace_id = "trace_id", timestamp = "timestamp", ts = "ts"}
+          }
+          stage.timestamp {
+            source            = "timestamp"
+            format            = "RFC3339Nano"
+            action_on_failure = "skip"
+          }
+          stage.timestamp {
+            source            = "ts"
+            format            = "Unix"
+            action_on_failure = "skip"
+          }
+        }
+
+        // logfmt: Argo CD, the Grafana stack, sealed-secrets.
+        stage.match {
+          selector = "{job=~\".+\"} !~ \"^\\\\s*\\\\{\" |~ \"(^| )level=\""
+          stage.logfmt {
+            mapping = {level = "", logger = "", trace_id = "traceID"}
+          }
+        }
+
+        // klog: Kubernetes' own components. I1024 02:58:43.315562
+        stage.match {
+          selector = "{job=~\".+\"} |~ \"^[IWEF]\\\\d{4} \""
+          stage.regex {
+            expression = "^(?P<level>[IWEF])\\d{4} "
+          }
+        }
+
+        // The OpenTelemetry collector: timestamp<TAB>info<TAB>...
+        stage.match {
+          selector = "{job=~\".+\"} |~ \"^\\\\S+\\\\t(debug|info|warn|error)\\\\t\""
+          stage.regex {
+            expression = "^\\S+\\t(?P<level>\\w+)\\t"
+          }
+        }
+
+        // Everything else names its level in capitals near the start: Postgres,
+        // Jenkins, Home Assistant, Kafka, CoreDNS, Traefik.
+        stage.match {
+          selector = "{job=~\".+\"} !~ \"^\\\\s*\\\\{\" !~ \"(^| )level=\" !~ \"^[IWEF]\\\\d{4} \""
+          stage.regex {
+            expression = "^.{0,60}?\\b(?P<level>TRACE|DEBUG|DBG|INFO|INF|LOG|NOTICE|WARNING|WARN|WRN|ERROR|ERR|CRITICAL|FATAL|FTL|PANIC|PNC)\\b"
+          }
+        }
+
+        // Anything not listed gets no label, so a stray value can't add streams.
+        stage.template {
+          source   = "level"
+          // The chart runs this file through Helm first, hence the escaped braces.
+          template = `{{ "{{" }} $l := ToLower .Value {{ "}}" }}{{ "{{" }} if has $l (list "trace" "debug" "dbg") {{ "}}" }}debug{{ "{{" }} else if has $l (list "i" "info" "inf" "log" "notice") {{ "}}" }}info{{ "{{" }} else if has $l (list "w" "warn" "warning" "wrn") {{ "}}" }}warning{{ "{{" }} else if has $l (list "e" "f" "err" "error" "crit" "critical" "alert" "emerg" "fatal" "ftl" "panic" "pnc") {{ "}}" }}error{{ "{{" }} end {{ "}}" }}`
+        }
+        stage.labels {
+          values = {level = ""}
+        }
+        stage.structured_metadata {
+          values = {logger = "", trace_id = ""}
+        }
+
         forward_to = [loki.write.loki.receiver]
       }
 
@@ -119,6 +238,9 @@ alloy:
     extra:
       - name: run
         mountPath: /run/alloy
+      - name: machine-id
+        mountPath: /etc/machine-id
+        readOnly: true
   resources:
     requests:
       memory: 64Mi
@@ -139,6 +261,9 @@ controller:
       - name: run
         hostPath:
           path: /run/alloy
+      - name: machine-id
+        hostPath:
+          path: /etc/machine-id
 
 # Alloy's own metrics: lines read and sent, send errors.
 serviceMonitor:
