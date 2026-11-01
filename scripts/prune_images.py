@@ -17,6 +17,7 @@ removed there; that's reported, not forced.
 Dry run by default:
     scripts/prune_images.py            # show what would go
     scripts/prune_images.py --apply    # actually delete
+    scripts/prune_images.py --dev-only # only dev-* tags over 3 days old
 
 Exits 1 if anything went wrong, or 2 if the only thing it couldn't do was
 delete from Docker Hub for lack of credentials (Jenkins shows that as
@@ -35,16 +36,20 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 NAMESPACE = "whitepatrick"
-REPOS = ["wigle-sync", "wigle-console", "joke-reader", "joke-importer"]
+REPOS = ["wigle-sync", "wigle-console", "joke-reader", "joke-importer", "overwatch"]
 # Every k3s node, by name (the router's DNS; validate --cluster checks the list).
 NODES = ["brick420", "brick2000", "brick666"]
 SSH_USER = "zaphod"
 HUB = "https://hub.docker.com/v2"
 VERSION = re.compile(r"^\d+(\.\d+)*$")
+DEV_PREFIX = "dev-"  # a branch's trial images (brick-cicd-config's build-branches)
+DEV_DAYS = 3
 
 
 def version_key(tag: str) -> tuple[int, ...]:
@@ -79,6 +84,20 @@ def hub_tags(repo: str) -> list[str]:
         tags += [t["name"] for t in page.get("results", [])]
         url = page.get("next")
     return tags
+
+
+def old_dev_tags(repo: str, now: float | None = None) -> set[str]:
+    """dev-* tags pushed more than DEV_DAYS ago."""
+    now = time.time() if now is None else now
+    old, url = set(), f"{HUB}/repositories/{NAMESPACE}/{repo}/tags?page_size=100"
+    while url:
+        page = hub_request("GET", url)
+        for t in page.get("results", []):
+            pushed = datetime.fromisoformat(t["last_updated"].replace("Z", "+00:00")).timestamp()
+            if t["name"].startswith(DEV_PREFIX) and now - pushed > DEV_DAYS * 86400:
+                old.add(t["name"])
+        url = page.get("next")
+    return old
 
 
 def hub_token() -> str | None:
@@ -128,11 +147,41 @@ def local_images() -> dict[str, set[str]]:
     return found
 
 
+def prune_dev(apply: bool) -> int:
+    """Old dev-* tags, on Docker Hub and on the nodes; the only prune with a schedule."""
+    token = hub_token() if apply else None
+    problems = 0
+    for repo in REPOS:
+        for tag in sorted(old_dev_tags(repo)):
+            if token:
+                hub_request("DELETE", f"{HUB}/repositories/{NAMESPACE}/{repo}/tags/{tag}/", token)
+            print(f"  {'deleted' if token else 'would delete'} {repo}:{tag}")
+    for node in NODES:
+        try:
+            images = node_images(node)
+        except RuntimeError as e:
+            problems += 1
+            print(f"  {node} unreachable: {e}")
+            continue
+        current = {repo: set(hub_tags(repo)) for repo in images}
+        for repo, tags in images.items():
+            # Gone from Hub, or about to be: it can always be rebuilt from its commit.
+            for tag in sorted(t for t in tags if t.startswith(DEV_PREFIX) and t not in current[repo]):
+                err = node_rmi(node, repo, tag) if apply else None
+                print(f"  {node}: kept {repo}:{tag} ({err})" if err else f"  {node}: removed {repo}:{tag}")
+    if problems:
+        return 1
+    return 2 if apply and not token else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--keep", type=int, default=2, help="versions to keep per repo (default 2)")
     parser.add_argument("--apply", action="store_true", help="delete (default is a dry run)")
+    parser.add_argument("--dev-only", action="store_true", help=f"only {DEV_PREFIX}* tags over {DEV_DAYS} days old")
     args = parser.parse_args()
+    if args.dev_only:
+        return prune_dev(args.apply)
     verb = "deleted" if args.apply else "would delete"
     problems = 0
 

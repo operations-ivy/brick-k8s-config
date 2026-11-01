@@ -8,6 +8,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -226,6 +227,17 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class DevPruneTests(unittest.TestCase):
+    def test_only_old_dev_tags_go(self):
+        page = {"next": None, "results": [
+            {"name": "dev-old", "last_updated": "2026-10-01T00:00:00.000000Z"},
+            {"name": "dev-new", "last_updated": "2026-10-30T00:00:00Z"},
+            {"name": "0.1.1", "last_updated": "2026-01-01T00:00:00Z"}]}
+        now = datetime(2026, 10, 31, tzinfo=timezone.utc).timestamp()
+        with mock.patch.object(prune, "hub_request", return_value=page):
+            self.assertEqual(prune.old_dev_tags("overwatch", now), {"dev-old"})
+
+
 class TrialBranchTests(unittest.TestCase):
     APP = {"metadata": {"name": "overwatch"}, "spec": {"source": {"repoURL": "https://github.com/x/overwatch.git"}}}
     HELM = {"metadata": {"name": "loki", "labels": {"a": "b"}}, "spec": {"sources": [
@@ -237,6 +249,14 @@ class TrialBranchTests(unittest.TestCase):
         self.assertEqual(ops[0], {"op": "replace", "path": "/spec/source/targetRevision", "value": "fix-x"})
         self.assertIn({"op": "add", "path": "/metadata/labels/brick-trial", "value": "true"}, ops)
         self.assertIn({"op": "add", "path": "/metadata/annotations/brick-trial-branch", "value": "fix-x"}, ops)
+
+    def test_dev_images_override_the_tags_and_going_back_clears_them(self):
+        app = {"metadata": {"name": "overwatch"}, "spec": {"source": {"targetRevision": "main"}}}
+        ops = trial.patch(app, "feature/x", ["whitepatrick/overwatch:dev-abc"])
+        self.assertIn({"op": "add", "path": "/spec/source/kustomize",
+                       "value": {"images": ["whitepatrick/overwatch:dev-abc"]}}, ops)
+        app["spec"]["source"]["kustomize"] = {"images": ["whitepatrick/overwatch:dev-abc"]}
+        self.assertIn({"op": "remove", "path": "/spec/source/kustomize"}, trial.patch(app, "main"))
 
     def test_a_helm_release_moves_its_values_not_its_chart(self):
         self.assertEqual(trial.patch(self.HELM, "b")[0]["path"], "/spec/sources/1/targetRevision")
