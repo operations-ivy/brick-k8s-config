@@ -182,6 +182,11 @@ prometheus:
         static_configs:
           - targets: ["status.brick.nozdormu.cloud"]
             labels: {instance: brick9000}
+      # The button lights' API (brick-cicd-config README, "The plasma API").
+      - job_name: brick-plasma
+        static_configs:
+          - targets: ["brick9000:8766"]
+            labels: {instance: brick9000}
       - job_name: brick1982-node
         static_configs:
           - targets: ["brick1982:9100"]
