@@ -1,0 +1,431 @@
+# brick.nozdormu.cloud: a wall of tiles, one per *.brick service. One file with
+# no build and no outside requests, so it works when the internet doesn't. Caddy
+# serves it from this ConfigMap, and picks up a change without a restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: catalog
+  namespace: front-door
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>brick</title>
+    <style>
+      :root {
+        --mortar: #a9afac;
+        --ink: #1b2326;
+        --ink-soft: #3a4549;
+        --sheet: #f3f5f3;
+        --sheet-ink: #1b2326;
+        --sheet-soft: #4a5559;
+        --type: "Avenir Next", Avenir, "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", Roboto, sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --mortar: #30363a;
+          --ink: #eef1ef;
+          --ink-soft: #b4bdbb;
+          --sheet: #1d2226;
+          --sheet-ink: #eef1ef;
+          --sheet-soft: #b4bdbb;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: clamp(20px, 4vw, 48px) clamp(16px, 4vw, 48px) 48px;
+        background: var(--mortar);
+        color: var(--ink);
+        font-family: var(--type);
+        line-height: 1.45;
+      }
+      main { max-width: 1240px; margin: 0 auto; }
+      h1 {
+        margin: 0;
+        font-size: clamp(2.6rem, 7vw, 4.4rem);
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1;
+      }
+      header p { margin: 6px 0 clamp(20px, 3vw, 32px); color: var(--ink-soft); font-size: 1.05rem; }
+
+      /* Running bond: a brick spans two columns and one column is spare, so every
+         other course can start half a brick in and keep the same count. */
+      .wall { display: grid; grid-template-columns: repeat(9, 1fr); gap: 9px; }
+      .brick {
+        grid-column: span 2;
+        display: block;
+        width: 100%;
+        margin: 0;
+        padding: 7px 7px 0;
+        border: 0;
+        border-radius: 4px;
+        background: var(--glaze);
+        color: var(--on);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+        box-shadow: inset 0 2px 0 rgb(255 255 255 / .3), inset 0 -3px 0 rgb(0 0 0 / .22);
+      }
+      .brick:nth-child(8n + 5) { grid-column: 2 / span 2; }
+      .brick:hover { filter: brightness(1.08); }
+      .brick:active { transform: translateY(1px); }
+      .brick:focus-visible, .go:focus-visible, .close:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+      .face { display: block; width: 100%; height: auto; border-radius: 2px; }
+      .stamp { display: block; padding: 6px 3px 10px; font-size: clamp(.95rem, 1.5vw, 1.1rem); font-weight: 700; }
+
+      @media (max-width: 900px) {
+        .wall { grid-template-columns: repeat(7, 1fr); }
+        .brick:nth-child(n) { grid-column: span 2; }
+        .brick:nth-child(6n + 4) { grid-column: 2 / span 2; }
+      }
+      @media (max-width: 560px) {
+        .wall { grid-template-columns: repeat(5, 1fr); gap: 7px; }
+        .brick:nth-child(n) { grid-column: span 2; }
+        .brick:nth-child(4n + 3) { grid-column: 2 / span 2; }
+      }
+
+      dialog {
+        width: min(620px, calc(100vw - 32px));
+        max-height: calc(100dvh - 32px);
+        padding: 0;
+        border: 0;
+        border-radius: 6px;
+        background: var(--sheet);
+        color: var(--sheet-ink);
+        box-shadow: 0 18px 60px rgb(0 0 0 / .5);
+      }
+      dialog[open] { animation: settle .16s ease-out; }
+      @keyframes settle { from { opacity: 0; transform: scale(.96); } }
+      @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } }
+      dialog::backdrop { background: rgb(15 20 22 / .6); }
+      .plate { padding: 10px 10px 13px; background: var(--glaze); box-shadow: inset 0 2px 0 rgb(255 255 255 / .3), inset 0 -3px 0 rgb(0 0 0 / .22); }
+      .body { padding: 18px 22px 22px; }
+      h2 { margin: 0 0 8px; font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; }
+      ul { margin: 0 0 18px; padding-left: 1.15em; color: var(--sheet-soft); }
+      li { margin-bottom: 5px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; }
+      .go {
+        padding: 9px 16px;
+        border-radius: 4px;
+        background: var(--glaze);
+        color: var(--on);
+        font-weight: 700;
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+      .close {
+        padding: 9px 14px;
+        border: 1px solid var(--sheet-soft);
+        border-radius: 4px;
+        background: none;
+        color: var(--sheet-ink);
+        font: inherit;
+        cursor: pointer;
+      }
+    </style>
+    </head>
+    <body>
+
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <!-- Drawn, not screenshots: invented shapes, so no real data lands in git. -->
+      <symbol id="m-status" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#0f1613"/>
+        <rect x="8" y="7" width="60" height="7" rx="1" fill="#e8dcc4"/>
+        <rect x="8" y="19" width="110" height="56" fill="#1d2b23"/>
+        <rect x="12" y="23" width="102" height="44" fill="#050806"/>
+        <path d="M18 60h12v-8h14v-10h12v14h16v-20h12v24h20" fill="none" stroke="#2fe05a" stroke-width="2"/>
+        <g fill="#18241e">
+          <rect x="125" y="19" width="107" height="17"/><rect x="125" y="38.500" width="107" height="17"/><rect x="125" y="58" width="107" height="17"/>
+        </g>
+        <g fill="#2fe05a">
+          <rect x="125" y="19" width="4" height="17"/><rect x="125" y="38.500" width="4" height="17"/><rect x="125" y="58" width="4" height="17"/>
+          <rect x="134" y="25" width="44" height="6"/><rect x="134" y="44.500" width="38" height="6"/><rect x="134" y="64" width="18" height="6"/>
+        </g>
+        <rect x="8" y="80" width="224" height="27" fill="#18241e"/>
+        <g fill="#050806"><circle cx="24" cy="93" r="10"/><circle cx="80" cy="93" r="10"/><circle cx="136" cy="93" r="10"/><circle cx="192" cy="93" r="10"/></g>
+        <g fill="#2fe05a">
+          <path d="M24 93V83a10 10 0 0 1 8 16z"/><path d="M80 93V83a10 10 0 0 1 5 2z"/><path d="M136 93V83a10 10 0 0 1 9 14z"/><path d="M192 93V83a10 10 0 1 1-8 16z"/>
+          <rect x="38" y="87" width="16" height="2"/><rect x="38" y="92" width="24" height="2"/><rect x="38" y="97" width="10" height="2"/>
+          <rect x="94" y="87" width="8" height="2"/><rect x="94" y="92" width="20" height="2"/><rect x="94" y="97" width="26" height="2"/>
+          <rect x="150" y="87" width="12" height="2"/><rect x="150" y="92" width="22" height="2"/><rect x="150" y="97" width="18" height="2"/>
+          <rect x="206" y="87" width="20" height="2"/><rect x="206" y="92" width="10" height="2"/><rect x="206" y="97" width="22" height="2"/>
+        </g>
+      </symbol>
+
+      <symbol id="m-wigle" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#0b0918"/>
+        <rect x="7" y="6" width="226" height="1.500" fill="#e8337f"/>
+        <rect x="10" y="12" width="44" height="8" rx="1" fill="#efe6fb"/><rect x="56" y="18" width="10" height="2.500" fill="#ff2d78"/><rect x="68" y="12" width="28" height="8" rx="1" fill="#efe6fb"/>
+        <g fill="#171330" stroke="#2c2650" stroke-width=".6">
+          <rect x="10" y="26" width="50" height="20"/><rect x="66" y="26" width="50" height="20"/><rect x="122" y="26" width="50" height="20"/><rect x="178" y="26" width="52" height="20"/>
+        </g>
+        <rect x="15" y="31" width="28" height="7" fill="#19e0ee"/><rect x="71" y="31" width="16" height="7" fill="#3af07f"/><rect x="127" y="31" width="9" height="7" fill="#ff2d78"/><rect x="183" y="31" width="22" height="7" fill="#ff2d78"/>
+        <g fill="#19e0ee">
+          <rect x="10" y="54" width="16" height="6"/><rect x="10" y="63" width="62" height="6"/><rect x="10" y="72" width="100" height="6"/><rect x="10" y="81" width="46" height="6"/><rect x="10" y="90" width="72" height="6"/><rect x="10" y="99" width="24" height="6"/>
+        </g>
+        <g fill="#3a2d7a">
+          <rect x="27" y="54" width="14" height="6"/><rect x="73" y="63" width="14" height="6"/><rect x="111" y="72" width="8" height="6"/><rect x="57" y="81" width="18" height="6"/><rect x="83" y="90" width="12" height="6"/><rect x="35" y="99" width="10" height="6"/>
+        </g>
+        <path d="M132 104c10-14 18-16 30-18s12-14 26-18 30-6 42-18" fill="none" stroke="#19e0ee" stroke-width="2"/>
+      </symbol>
+
+      <symbol id="m-radar" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#171717"/>
+        <rect x="8" y="7" width="58" height="5" fill="#d9d9d9"/>
+        <circle cx="150" cy="9.500" r="2.500" fill="#3f8ef0"/><rect x="155" y="8" width="16" height="3" fill="#8c8c8c"/><circle cx="178" cy="9.500" r="2.500" fill="#e8622c"/><rect x="183" y="8" width="16" height="3" fill="#8c8c8c"/><circle cx="206" cy="9.500" r="2.500" fill="#1ea672"/><rect x="211" y="8" width="20" height="3" fill="#8c8c8c"/>
+        <g fill="none" stroke="#4a463c" stroke-width="1.400">
+          <path d="M0 40l44 18 34-22 42 30 30-16 40-26 50 8"/><path d="M78 36l-10-20M120 66l-14 26M150 50l22 34 30 6M190 24l10 34 40 8M44 58l-16 34"/>
+        </g>
+        <path d="M150 42l26 8c-2 8-10 12-16 8z" fill="#e8622c" opacity=".6"/>
+        <path d="M178 66l-8-14" stroke="#e8622c" stroke-width="2.500"/>
+        <circle cx="164" cy="50" r="6" fill="#3f8ef0" opacity=".85"/>
+        <circle cx="150" cy="42" r="2.500" fill="#fff"/>
+        <g fill="#8c8c8c">
+          <rect x="8" y="100" width="3" height="8"/><rect x="14" y="96" width="3" height="12"/><rect x="20" y="102" width="3" height="6"/><rect x="26" y="98" width="3" height="10"/><rect x="32" y="94" width="3" height="14"/><rect x="38" y="99" width="3" height="9"/><rect x="44" y="102" width="3" height="6"/><rect x="50" y="96" width="3" height="12"/><rect x="56" y="93" width="3" height="15"/><rect x="62" y="98" width="3" height="10"/><rect x="68" y="100" width="3" height="8"/><rect x="74" y="95" width="3" height="13"/><rect x="80" y="99" width="3" height="9"/><rect x="86" y="96" width="3" height="12"/><rect x="92" y="101" width="3" height="7"/><rect x="98" y="97" width="3" height="11"/><rect x="104" y="94" width="3" height="14"/><rect x="110" y="99" width="3" height="9"/><rect x="116" y="102" width="3" height="6"/><rect x="122" y="97" width="3" height="11"/><rect x="128" y="100" width="3" height="8"/><rect x="134" y="95" width="3" height="13"/><rect x="146" y="103" width="3" height="5"/><rect x="152" y="104" width="3" height="4"/><rect x="158" y="101" width="3" height="7"/><rect x="164" y="99" width="3" height="9"/><rect x="170" y="103" width="3" height="5"/><rect x="176" y="100" width="3" height="8"/><rect x="182" y="102" width="3" height="6"/><rect x="188" y="97" width="3" height="11"/><rect x="194" y="101" width="3" height="7"/><rect x="200" y="103" width="3" height="5"/><rect x="206" y="100" width="3" height="8"/><rect x="212" y="102" width="3" height="6"/><rect x="218" y="104" width="3" height="4"/><rect x="224" y="101" width="3" height="7"/>
+        </g>
+        <rect x="140" y="88" width="1.500" height="21" fill="#fff"/>
+      </symbol>
+
+      <symbol id="m-overwatch" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#0b0918"/>
+        <rect x="7" y="6" width="226" height="1.500" fill="#e8337f"/>
+        <rect x="10" y="12" width="62" height="8" rx="1" fill="#efe6fb"/>
+        <g fill="#171330" stroke="#3a3366" stroke-width=".6">
+          <rect x="10" y="25" width="42" height="7" rx="3.500"/><rect x="56" y="25" width="30" height="7" rx="3.500"/><rect x="90" y="25" width="52" height="7" rx="3.500"/>
+        </g>
+        <g fill="#3af07f"><circle cx="15" cy="28.500" r="1.500"/><circle cx="61" cy="28.500" r="1.500"/><circle cx="95" cy="28.500" r="1.500"/></g>
+        <rect x="10" y="38" width="108" height="15" rx="1.500" fill="#ffcc1a"/>
+        <g fill="#171330" stroke="#2c2650" stroke-width=".6">
+          <rect x="10" y="60" width="50" height="20" stroke="#ff2d78"/><rect x="66" y="60" width="50" height="20"/><rect x="122" y="60" width="50" height="20"/><rect x="178" y="60" width="52" height="20"/>
+          <rect x="10" y="85" width="50" height="20"/><rect x="66" y="85" width="50" height="20"/><rect x="122" y="85" width="50" height="20"/>
+        </g>
+        <rect x="15" y="64" width="9" height="7" fill="#ff2d78"/><rect x="71" y="64" width="9" height="7" fill="#19e0ee"/><rect x="127" y="64" width="9" height="7" fill="#6b5fa0"/><rect x="183" y="64" width="34" height="7" fill="#3af07f"/>
+        <rect x="15" y="89" width="9" height="7" fill="#6b5fa0"/><rect x="71" y="89" width="18" height="7" fill="#6b5fa0"/><rect x="127" y="89" width="9" height="7" fill="#6b5fa0"/>
+      </symbol>
+
+      <symbol id="m-homeassistant" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#f0f2f4"/>
+        <rect width="240" height="16" fill="#18a6e8"/>
+        <rect x="8" y="5" width="46" height="6" rx="1" fill="#fff"/>
+        <rect width="30" height="98" y="16" fill="#fff"/>
+        <g fill="#9aa5ad"><circle cx="15" cy="30" r="4"/><circle cx="15" cy="48" r="4"/><circle cx="15" cy="66" r="4"/><circle cx="15" cy="84" r="4"/></g>
+        <rect x="38" y="24" width="100" height="82" rx="5" fill="#fff"/>
+        <circle cx="88" cy="65" r="28" fill="none" stroke="#e1e6ea" stroke-width="7"/>
+        <path d="M68 85a28 28 0 0 1 33-44" fill="none" stroke="#f08c2e" stroke-width="7" stroke-linecap="round"/>
+        <rect x="76" y="58" width="24" height="13" rx="2" fill="#39434a"/>
+        <rect x="146" y="24" width="86" height="24" rx="5" fill="#fff"/><rect x="146" y="53" width="86" height="24" rx="5" fill="#fff"/><rect x="146" y="82" width="86" height="24" rx="5" fill="#fff"/>
+        <g fill="#18a6e8"><circle cx="160" cy="36" r="6"/><circle cx="160" cy="65" r="6"/><circle cx="160" cy="94" r="6"/></g>
+        <g fill="#b6c0c7"><rect x="172" y="33" width="46" height="6" rx="1"/><rect x="172" y="62" width="34" height="6" rx="1"/><rect x="172" y="91" width="40" height="6" rx="1"/></g>
+      </symbol>
+
+      <symbol id="m-reader" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#0b0918"/>
+        <rect x="7" y="6" width="226" height="1.500" fill="#e8337f"/>
+        <rect x="10" y="12" width="46" height="9" rx="1" fill="#efe6fb"/><rect x="58" y="19" width="10" height="2.500" fill="#ff2d78"/><rect x="70" y="12" width="26" height="9" rx="1" fill="#efe6fb"/>
+        <g fill="#171330" stroke="#2c2650" stroke-width=".6"><rect x="10" y="27" width="70" height="17"/><rect x="85" y="27" width="70" height="17"/><rect x="160" y="27" width="70" height="17"/></g>
+        <rect x="15" y="31" width="18" height="7" fill="#ff2d78"/><rect x="90" y="31" width="12" height="7" fill="#19e0ee"/><rect x="165" y="31" width="18" height="7" fill="#a44de0"/>
+        <rect x="10" y="50" width="52" height="56" fill="#121028"/>
+        <g><rect x="14" y="55" width="44" height="7" fill="#19303e"/><rect x="14" y="55" width="2" height="7" fill="#19e0ee"/><rect x="14" y="66" width="2" height="7" fill="#ff2d78"/><rect x="14" y="77" width="2" height="7" fill="#ffcc1a"/><rect x="14" y="88" width="2" height="7" fill="#a44de0"/></g>
+        <g fill="#322a5e"><rect x="19" y="68" width="32" height="3"/><rect x="19" y="79" width="26" height="3"/><rect x="19" y="90" width="30" height="3"/></g>
+        <g fill="#171330" stroke="#2c2650" stroke-width=".6"><rect x="68" y="50" width="78" height="26"/><rect x="152" y="50" width="78" height="26"/><rect x="68" y="80" width="78" height="26"/><rect x="152" y="80" width="78" height="26"/></g>
+        <g fill="#ff2d78"><rect x="72" y="54" width="14" height="2.500"/><rect x="156" y="54" width="14" height="2.500"/><rect x="72" y="84" width="14" height="2.500"/><rect x="156" y="84" width="14" height="2.500"/></g>
+        <g fill="#cfc8e8"><rect x="72" y="61" width="68" height="3"/><rect x="72" y="67" width="44" height="3"/><rect x="156" y="61" width="68" height="3"/><rect x="156" y="67" width="50" height="3"/><rect x="72" y="91" width="68" height="3"/><rect x="72" y="97" width="38" height="3"/><rect x="156" y="91" width="68" height="3"/><rect x="156" y="97" width="54" height="3"/></g>
+      </symbol>
+
+      <symbol id="m-volume" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#0f1412"/>
+        <path d="M56 12h130l6 6v84l-6 0H50V18z" fill="#18211c" stroke="#26332b"/>
+        <rect x="62" y="20" width="36" height="6" fill="#e0d8c4"/><rect x="146" y="21" width="34" height="4" fill="#79847d"/>
+        <text x="62" y="60" font-family="monospace" font-size="27" font-weight="700" fill="#2fe05a">46</text>
+        <rect x="62" y="68" width="118" height="5" fill="#070b09"/><rect x="62" y="68" width="54" height="5" fill="#2fe05a"/>
+        <rect x="112" y="63" width="10" height="15" fill="#e0d8c4"/>
+        <rect x="62" y="85" width="24" height="10" fill="#070b09" stroke="#79847d"/>
+      </symbol>
+
+      <symbol id="m-grafana" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#111217"/>
+        <rect width="240" height="12" fill="#181b1f"/>
+        <circle cx="9" cy="6" r="3.500" fill="#f46800"/><rect x="18" y="4" width="50" height="4" fill="#6e7380"/>
+        <g fill="#1b1e24" stroke="#2a2e37" stroke-width=".6"><rect x="6" y="17" width="110" height="52"/><rect x="122" y="17" width="112" height="52"/><rect x="6" y="74" width="54" height="34"/><rect x="65" y="74" width="51" height="34"/><rect x="122" y="74" width="112" height="34"/></g>
+        <path d="M10 56l14-8 12 4 14-16 14 10 14-14 14 8 14-10 10 6" fill="none" stroke="#73bf69" stroke-width="1.600"/>
+        <path d="M10 62l16-2 14-6 16 3 14-4 16 3 14-5 14 2" fill="none" stroke="#f2cc0c" stroke-width="1.600"/>
+        <path d="M126 58l10-4 10 2 8-26 10 22 14-4 12 6 14-14 10 12 12 2" fill="none" stroke="#5794f2" stroke-width="1.600"/>
+        <path d="M126 64h106v-3H126z" fill="#f46800" opacity=".6"/>
+        <rect x="13" y="82" width="38" height="16" rx="1" fill="#73bf69"/>
+        <path d="M74 100a16 16 0 0 1 33 0" fill="none" stroke="#2a2e37" stroke-width="5"/><path d="M74 100a16 16 0 0 1 22-14" fill="none" stroke="#f2cc0c" stroke-width="5"/>
+        <g fill="#343843"><rect x="128" y="81" width="100" height="4"/><rect x="128" y="89" width="84" height="4"/><rect x="128" y="97" width="92" height="4"/></g>
+      </symbol>
+
+      <symbol id="m-prometheus" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#fafafa"/>
+        <rect width="240" height="14" fill="#30343a"/>
+        <path d="M12 3a4 4 0 1 0 .1 0zM8 11h8v1H8z" fill="#e6522c"/><rect x="24" y="5" width="44" height="4" fill="#d5d9de"/>
+        <rect x="8" y="20" width="194" height="13" rx="2" fill="#fff" stroke="#cdd2d8"/>
+        <rect x="13" y="25" width="104" height="3.500" fill="#737b84"/>
+        <rect x="207" y="20" width="26" height="13" rx="2" fill="#e6522c"/>
+        <rect x="8" y="39" width="224" height="68" fill="#fff" stroke="#e3e6ea"/>
+        <g stroke="#eceff2"><path d="M8 53h224M8 67h224M8 81h224M8 95h224"/></g>
+        <path d="M12 88l18-6 16 4 18-22 16 10 18-6 16 12 18-30 18 18 16-6 18 8 18-14 16 6" fill="none" stroke="#e6522c" stroke-width="1.800"/>
+        <path d="M12 98l22-4 20 2 22-8 20 4 22-6 20 4 24-10 20 4 24-6" fill="none" stroke="#1a73c9" stroke-width="1.800"/>
+      </symbol>
+
+      <symbol id="m-jenkins" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#f7f7f8"/>
+        <rect width="240" height="15" fill="#fff"/>
+        <rect y="14.500" width="240" height="1" fill="#dcdfe3"/>
+        <circle cx="10" cy="7.500" r="4.500" fill="#d33833"/><rect x="19" y="5" width="34" height="5" fill="#1d2933"/>
+        <g fill="#9aa2ab"><rect x="8" y="24" width="34" height="4"/><rect x="8" y="33" width="28" height="4"/><rect x="8" y="42" width="36" height="4"/><rect x="8" y="51" width="24" height="4"/></g>
+        <rect x="52" y="22" width="180" height="86" rx="3" fill="#fff" stroke="#dcdfe3"/>
+        <g stroke="#eceef0"><path d="M52 36h180M52 50h180M52 64h180M52 78h180M52 92h180"/></g>
+        <g fill="#1ea64a"><circle cx="62" cy="29" r="3.500"/><circle cx="62" cy="43" r="3.500"/><circle cx="62" cy="71" r="3.500"/><circle cx="62" cy="85" r="3.500"/><circle cx="62" cy="99" r="3.500"/></g>
+        <circle cx="62" cy="57" r="3.500" fill="#d33833"/>
+        <g fill="#3b6fb6"><rect x="72" y="27" width="62" height="4"/><rect x="72" y="41" width="50" height="4"/><rect x="72" y="55" width="70" height="4"/><rect x="72" y="69" width="44" height="4"/><rect x="72" y="83" width="58" height="4"/><rect x="72" y="97" width="66" height="4"/></g>
+        <g fill="#c2c7cd"><rect x="178" y="27" width="44" height="4"/><rect x="178" y="41" width="36" height="4"/><rect x="178" y="55" width="44" height="4"/><rect x="178" y="69" width="30" height="4"/><rect x="178" y="83" width="40" height="4"/><rect x="178" y="97" width="34" height="4"/></g>
+      </symbol>
+
+      <symbol id="m-argocd" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#eef0f2"/>
+        <rect width="26" height="114" fill="#0f2b3a"/>
+        <circle cx="13" cy="12" r="6" fill="#ef7b4d"/>
+        <g fill="#5c7686"><rect x="8" y="28" width="10" height="3"/><rect x="8" y="38" width="10" height="3"/><rect x="8" y="48" width="10" height="3"/></g>
+        <g fill="none" stroke="#9fb0ba" stroke-width="1.200"><path d="M72 57c16 0 14-34 30-34M72 57h30M72 57c16 0 14 34 30 34M144 23c16 0 14-11 30-11M144 23c16 0 14 12 30 12M144 91c16 0 14-11 30-11M144 91c16 0 14 12 30 12"/></g>
+        <g fill="#fff" stroke="#cfd7dc" stroke-width=".8">
+          <rect x="34" y="47" width="38" height="20" rx="2"/><rect x="102" y="14" width="42" height="18" rx="2"/><rect x="102" y="48" width="42" height="18" rx="2"/><rect x="102" y="82" width="42" height="18" rx="2"/>
+          <rect x="174" y="4" width="54" height="16" rx="2"/><rect x="174" y="27" width="54" height="16" rx="2"/><rect x="174" y="72" width="54" height="16" rx="2"/><rect x="174" y="95" width="54" height="16" rx="2"/>
+        </g>
+        <g fill="#18be94"><circle cx="42" cy="57" r="4"/><circle cx="110" cy="23" r="3.500"/><circle cx="110" cy="57" r="3.500"/><circle cx="110" cy="91" r="3.500"/><circle cx="181" cy="12" r="3"/><circle cx="181" cy="35" r="3"/><circle cx="181" cy="80" r="3"/><circle cx="181" cy="103" r="3"/></g>
+        <g fill="#8a9ba6"><rect x="49" y="55" width="18" height="4"/><rect x="117" y="21" width="22" height="4"/><rect x="117" y="55" width="20" height="4"/><rect x="117" y="89" width="22" height="4"/><rect x="188" y="10" width="34" height="4"/><rect x="188" y="33" width="28" height="4"/><rect x="188" y="78" width="32" height="4"/><rect x="188" y="101" width="26" height="4"/></g>
+      </symbol>
+
+      <symbol id="m-dashboard" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#fff"/>
+        <rect width="240" height="15" fill="#326ce5"/>
+        <path d="M10 2.500l6 2.900 1.500 6.500-4.200 5.300H6.700L2.500 11.900 4 5.400z" transform="translate(0 -1.500) scale(.86)" fill="#fff"/>
+        <rect x="22" y="5" width="66" height="5" fill="#fff"/>
+        <rect y="15" width="40" height="99" fill="#f3f4f6"/>
+        <g fill="#a7aeb8"><rect x="7" y="23" width="26" height="4"/><rect x="7" y="33" width="20" height="4"/><rect x="7" y="43" width="24" height="4"/><rect x="7" y="53" width="18" height="4"/></g>
+        <rect x="48" y="22" width="185" height="85" fill="#fff" stroke="#e2e5e9"/>
+        <rect x="48" y="22" width="185" height="11" fill="#f3f4f6"/>
+        <g stroke="#eceef1"><path d="M48 45h185M48 57h185M48 69h185M48 81h185M48 93h185"/></g>
+        <g fill="#37a24b"><circle cx="58" cy="39" r="3"/><circle cx="58" cy="51" r="3"/><circle cx="58" cy="63" r="3"/><circle cx="58" cy="75" r="3"/><circle cx="58" cy="87" r="3"/><circle cx="58" cy="99" r="3"/></g>
+        <g fill="#326ce5"><rect x="67" y="37" width="58" height="4"/><rect x="67" y="49" width="46" height="4"/><rect x="67" y="61" width="66" height="4"/><rect x="67" y="73" width="40" height="4"/><rect x="67" y="85" width="54" height="4"/><rect x="67" y="97" width="48" height="4"/></g>
+        <g fill="#c6ccd3"><rect x="150" y="37" width="26" height="4"/><rect x="190" y="37" width="30" height="4"/><rect x="150" y="49" width="22" height="4"/><rect x="190" y="49" width="30" height="4"/><rect x="150" y="61" width="26" height="4"/><rect x="190" y="61" width="24" height="4"/><rect x="150" y="73" width="20" height="4"/><rect x="190" y="73" width="30" height="4"/><rect x="150" y="85" width="26" height="4"/><rect x="190" y="85" width="26" height="4"/><rect x="150" y="97" width="22" height="4"/><rect x="190" y="97" width="30" height="4"/></g>
+      </symbol>
+    </svg>
+
+    <main>
+      <header>
+        <h1>brick</h1>
+        <p id="count"></p>
+      </header>
+      <div class="wall" id="wall"></div>
+    </main>
+
+    <dialog id="sheet" aria-labelledby="sheet-name">
+      <div class="plate" id="plate"><svg class="face" viewBox="0 0 240 114" aria-hidden="true"><use id="sheet-face"/></svg></div>
+      <div class="body">
+        <h2 id="sheet-name"></h2>
+        <ul id="sheet-points"></ul>
+        <div class="actions">
+          <a class="go" id="sheet-go"></a>
+          <button class="close" type="button" id="sheet-close">Close</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script>
+      // One entry per service. To add one: a line here and an m-<id> drawing above.
+      const services = [
+        {id: "status", name: "Status board", glaze: "#2fbf55", on: "#08230f", points: [
+          "The board from brick9000's screen, read-only",
+          "Shows builds, cluster health and the last wardriving sync",
+          "Shows CPU, memory, disk and temperature for each host"]},
+        {id: "wigle", name: "Wardriving console", glaze: "#19c6d6", on: "#04262a", points: [
+          "Tracks what each drive found, and what's new to you",
+          "Reports on the last sync, with logs from recent runs",
+          "Shows whether the Pi is in range and when the next sync runs"]},
+        {id: "radar", name: "Drive replay", glaze: "#e8622c", on: "#2b0e02", points: [
+          "Replays a drive over the streets of earlier drives",
+          "Filters by Wi-Fi, BLE and Bluetooth",
+          "Shows sightings over time, and plays them back faster"]},
+        {id: "overwatch", name: "Overwatch", glaze: "#f2c21b", on: "#2a2000", points: [
+          "Watches for Bluetooth trackers and gadgets nearby",
+          "Compares what it hears with what's usual, and raises alerts",
+          "Watches for Wi-Fi attacks and unexpected port forwards"]},
+        {id: "homeassistant", name: "Home Assistant", glaze: "#18a6e8", on: "#04222f", points: [
+          "Talks to the thermostat over HomeKit",
+          "Gives the wall panel its readings and controls",
+          "Keeps the panel's changes within safe limits"]},
+        {id: "reader", name: "Joke reader", glaze: "#e0408a", on: "#2c0518", points: [
+          "Browses the Chuck Norris jokes the importer stored",
+          "Filters by category or text",
+          "Reloads from the database on request"]},
+        {id: "volume", name: "Speaker volume", glaze: "#7fae8a", on: "#0f2015", points: [
+          "Sets the volume of brick9000's speaker",
+          "Mutes it with one press",
+          "Has a hardware twin: the volume dial"]},
+        {id: "grafana", name: "Grafana", glaze: "#f46800", on: "#2b1200", points: [
+          "Dashboards for hosts, apps and builds",
+          "Searches every service's logs",
+          "Follows a request through its traces"]},
+        {id: "prometheus", name: "Prometheus", glaze: "#d8492a", on: "#fff", points: [
+          "Stores the metrics behind the dashboards",
+          "Runs ad hoc queries and graphs them",
+          "Shows which alerts are firing"]},
+        {id: "jenkins", name: "Jenkins", glaze: "#c9352f", on: "#fff", points: [
+          "Builds and publishes the app images",
+          "Runs the nightly tests and image checks",
+          "Deploys to brick9000 and brick1982",
+          "Asks you to sign in"]},
+        {id: "argocd", name: "Argo CD", glaze: "#18be94", on: "#03261d", points: [
+          "Deploys the cluster from git",
+          "Shows what's synced and healthy, app by app",
+          "Shows which apps are trying out a branch"]},
+        {id: "dashboard", name: "Kubernetes Dashboard", glaze: "#326ce5", on: "#fff", points: [
+          "Browses the cluster's pods, deployments and nodes",
+          "Reads a pod's logs and events",
+          "Asks you to sign in"]},
+      ];
+
+      const url = s => `https://${s.id}.brick.nozdormu.cloud`;
+      const paint = (el, s) => { el.style.setProperty("--glaze", s.glaze); el.style.setProperty("--on", s.on); };
+      const sheet = document.getElementById("sheet");
+      const wall = document.getElementById("wall");
+
+      function open(s) {
+        paint(sheet, s);
+        document.getElementById("sheet-face").setAttribute("href", `#m-${s.id}`);
+        document.getElementById("sheet-name").textContent = s.name;
+        const points = document.getElementById("sheet-points");
+        points.replaceChildren(...s.points.map(p => {
+          const li = document.createElement("li");
+          li.textContent = p;
+          return li;
+        }));
+        const go = document.getElementById("sheet-go");
+        go.href = url(s);
+        go.textContent = `${s.id}.brick.nozdormu.cloud`;
+        sheet.showModal();
+      }
+
+      for (const s of services) {
+        const brick = document.createElement("button");
+        brick.className = "brick";
+        brick.type = "button";
+        paint(brick, s);
+        brick.innerHTML = `<svg class="face" viewBox="0 0 240 114" aria-hidden="true"><use href="#m-${s.id}"/></svg><span class="stamp"></span>`;
+        brick.querySelector(".stamp").textContent = s.name;
+        brick.addEventListener("click", () => open(s));
+        wall.append(brick);
+      }
+      document.getElementById("count").textContent = `${services.length} services on the wall. Pick a brick to see what it does.`;
+      document.getElementById("sheet-close").addEventListener("click", () => sheet.close());
+      sheet.addEventListener("click", e => { if (e.target === sheet) sheet.close(); });
+    </script>
+    </body>
+    </html>
