@@ -17,14 +17,15 @@ spec:
     server: https://kubernetes.default.svc
     namespace: argocd
   # scripts/trial-branch points an app at a branch before its PR merges: root
-  # leaves that alone (the git source's targetRevision and the trial label and
-  # annotation), so self-heal doesn't put the app straight back on main.
+  # leaves that alone (the git source's targetRevision, a dev image override, and the
+  # trial label and annotation), so self-heal doesn't put the app straight back on main.
   ignoreDifferences:
     - group: argoproj.io
       kind: Application
       jsonPointers:
         - /spec/source/targetRevision
         - /spec/sources/1/targetRevision
+        - /spec/source/kustomize
         - /metadata/labels/brick-trial
         - /metadata/annotations/brick-trial-branch
   syncPolicy:

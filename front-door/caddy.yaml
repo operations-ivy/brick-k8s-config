@@ -38,13 +38,23 @@ data:
     		lb_try_duration 2s
     	}
     }
-    *.brick.nozdormu.cloud {
+    (porkbun) {
     	tls {
     		dns porkbun {
     			api_key {file./run/secrets/porkbun/api_key}
     			api_secret_key {file./run/secrets/porkbun/secret_key}
     		}
     	}
+    }
+    # The catalog (catalog.yaml). The wildcard covers names under brick, not
+    # brick itself, so this name has its own DNS record and certificate.
+    brick.nozdormu.cloud {
+    	import porkbun
+    	root * /srv/catalog
+    	file_server
+    }
+    *.brick.nozdormu.cloud {
+    	import porkbun
     	# The board's read-only mirror: brick-status on brick9000 (back on
     	# 192.168.1.224 since 2026-10-26), outside the cluster. It sees the
     	# X-Forwarded-For Caddy adds and never starts a cmatrix of its own.
@@ -102,7 +112,18 @@ data:
     		redir https://{host}{uri} 308
     	}
     }
-    http://*.brick.nozdormu.cloud {
+    # The plasma API (brick-cicd-config brick-plasma/): brick9000's button
+    # lights, told what to show by jobs as they run. Plain HTTP, so a sender has
+    # no TLS handshake to wait for, and no retrying: a signal that can't get
+    # through now is stale by the time it could, and senders give up after 1 s.
+    http://plasma.brick.nozdormu.cloud {
+    	reverse_proxy 192.168.1.224:8766 {
+    		transport http {
+    			dial_timeout 500ms
+    		}
+    	}
+    }
+    http://brick.nozdormu.cloud, http://*.brick.nozdormu.cloud {
     	redir https://{host}{uri} 308
     }
     # Caddy's own metrics for Prometheus (the caddy scrape job, 192.168.1.221:9180).
@@ -140,7 +161,7 @@ spec:
         app.kubernetes.io/name: caddy
       annotations:
         # Restart when the Caddyfile changes (bump by hand with it).
-        brick/caddyfile-rev: "3"
+        brick/caddyfile-rev: "5"
     spec:
       nodeSelector:
         chuck.io/storage-node: "true"
@@ -154,6 +175,7 @@ spec:
             - {name: metrics, containerPort: 9180}
           volumeMounts:
             - {name: caddyfile, mountPath: /etc/caddy}
+            - {name: catalog, mountPath: /srv/catalog, readOnly: true}
             - {name: data, mountPath: /data}
             - {name: porkbun, mountPath: /run/secrets/porkbun, readOnly: true}
           readinessProbe:
@@ -172,6 +194,9 @@ spec:
         - name: caddyfile
           configMap:
             name: caddyfile
+        - name: catalog
+          configMap:
+            name: catalog
         - name: data
           persistentVolumeClaim:
             claimName: caddy-data

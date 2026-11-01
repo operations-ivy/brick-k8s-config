@@ -1,23 +1,23 @@
-# The promtail Helm release: chart pinned here, values from git
-# (monitoring/promtail/promtail-values.yaml). Bump the chart here and in validate.yaml together.
+# The alloy Helm release: chart pinned here, values from git
+# (monitoring/alloy/alloy-values.yaml). Bump the chart here and in validate.yaml together.
 #
 # Automated (#42): a merge to main is a deploy, a hand-made change is put
 # back, and an object deleted from git is deleted here.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: promtail
+  name: alloy
   namespace: argocd
 spec:
   project: platform
   sources:
     - repoURL: https://grafana.github.io/helm-charts
-      chart: promtail
-      targetRevision: 6.17.1
+      chart: alloy
+      targetRevision: 1.15.0
       helm:
-        releaseName: promtail
+        releaseName: alloy
         valueFiles:
-          - $values/monitoring/promtail/promtail-values.yaml
+          - $values/monitoring/alloy/alloy-values.yaml
     - repoURL: https://github.com/operations-ivy/brick-k8s-config.git
       targetRevision: main
       ref: values
