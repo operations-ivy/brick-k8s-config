@@ -112,6 +112,17 @@ data:
     		redir https://{host}{uri} 308
     	}
     }
+    # The plasma API (brick-cicd-config brick-plasma/): brick9000's button
+    # lights, told what to show by jobs as they run. Plain HTTP, so a sender has
+    # no TLS handshake to wait for, and no retrying: a signal that can't get
+    # through now is stale by the time it could, and senders give up after 1 s.
+    http://plasma.brick.nozdormu.cloud {
+    	reverse_proxy 192.168.1.224:8766 {
+    		transport http {
+    			dial_timeout 500ms
+    		}
+    	}
+    }
     http://brick.nozdormu.cloud, http://*.brick.nozdormu.cloud {
     	redir https://{host}{uri} 308
     }
@@ -150,7 +161,7 @@ spec:
         app.kubernetes.io/name: caddy
       annotations:
         # Restart when the Caddyfile changes (bump by hand with it).
-        brick/caddyfile-rev: "4"
+        brick/caddyfile-rev: "5"
     spec:
       nodeSelector:
         chuck.io/storage-node: "true"
