@@ -1,6 +1,6 @@
-# Alloy replaces Promtail (past end of life since 2026-03-02, #55): the same
-# job on every node, pod logs to Loki under the same labels, so dashboards and
-# LogQL queries keep working. The relabel rules are the Promtail chart's.
+# Alloy took over from Promtail (end of life 2026-03-02, #55): every node sends its
+# pods' logs to Loki under Promtail's labels, so dashboards and LogQL queries
+# kept working. The relabel rules are the Promtail chart's.
 alloy:
   configMap:
     content: |
