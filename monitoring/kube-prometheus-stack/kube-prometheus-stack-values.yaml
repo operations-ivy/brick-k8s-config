@@ -31,7 +31,9 @@ grafana:
       memory: 300Mi
       cpu: 100m
     limits:
-      memory: 600Mi
+      # 600Mi was tight: ~480Mi working set, and the liveness probe timed out
+      # under dashboard load and restarted it (2026-11-02).
+      memory: 1Gi
   service:
     type: ClusterIP
   additionalDataSources:
