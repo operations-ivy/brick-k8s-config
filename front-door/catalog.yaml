@@ -332,7 +332,7 @@ data:
         <h2 id="sheet-name"></h2>
         <ul id="sheet-points"></ul>
         <div class="actions">
-          <a class="go" id="sheet-go"></a>
+          <a class="go" id="sheet-go" target="_blank" rel="noopener"></a>
           <button class="close" type="button" id="sheet-close">Close</button>
         </div>
       </div>
@@ -425,6 +425,8 @@ data:
       }
       document.getElementById("count").textContent = `${services.length} services on the wall. Pick a brick to see what it does.`;
       document.getElementById("sheet-close").addEventListener("click", () => sheet.close());
+      // The service opens in a new tab; this one goes back to the wall.
+      document.getElementById("sheet-go").addEventListener("click", () => sheet.close());
       sheet.addEventListener("click", e => { if (e.target === sheet) sheet.close(); });
     </script>
     </body>
