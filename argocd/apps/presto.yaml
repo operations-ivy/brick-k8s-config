@@ -1,0 +1,26 @@
+# The Presto's photo service: the upload page (presto.brick.nozdormu.cloud) and
+# the converter. From operations-ivy/presto's k8s_config/ on main.
+#
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here (the photo volume is
+# protected by its own Prune=false,Delete=false).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: presto
+  namespace: argocd
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/operations-ivy/presto.git
+    targetRevision: main
+    path: k8s_config
+    # Rendered with Kustomize, detected from k8s_config/kustomization.yaml.
+    # No `kustomize: {}` here (root would diff forever) and not directory mode.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: presto
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

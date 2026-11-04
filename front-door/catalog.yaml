@@ -208,6 +208,30 @@ data:
         <rect x="15" y="89" width="9" height="7" fill="#6b5fa0"/><rect x="71" y="89" width="18" height="7" fill="#6b5fa0"/><rect x="127" y="89" width="9" height="7" fill="#6b5fa0"/>
       </symbol>
 
+      <symbol id="m-presto" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#07050f"/>
+        <rect x="10" y="9" width="54" height="9" rx="1" fill="#05d9e8"/>
+        <rect x="10" y="20" width="30" height="3" fill="#ff2a6d"/>
+        <rect x="178" y="10" width="52" height="3" fill="#6f68a0"/><rect x="190" y="16" width="40" height="3" fill="#39ff88"/>
+        <rect x="10" y="29" width="220" height="13" rx="1.500" fill="#ff2a6d"/><rect x="11.200" y="30.200" width="217.600" height="10.600" rx="1" fill="#0e0a1e"/>
+        <rect x="98" y="33.500" width="44" height="4" fill="#e7e3ff"/>
+        <rect x="10" y="47" width="32" height="3" fill="#f9c80e"/>
+        <g stroke="#241a44" stroke-width=".6">
+          <rect x="10" y="54" width="50" height="40" fill="#2a1a3e"/><rect x="66" y="54" width="50" height="40" fill="#123a4a"/>
+          <rect x="122" y="54" width="50" height="40" fill="#3a1f18"/><rect x="178" y="54" width="52" height="40" fill="#1d2f22"/>
+        </g>
+        <rect x="18" y="66" width="20" height="14" fill="#ff9f1c" opacity=".7"/><rect x="76" y="62" width="26" height="22" fill="#05d9e8" opacity=".5"/>
+        <rect x="132" y="70" width="30" height="16" fill="#ff2a6d" opacity=".55"/><rect x="188" y="64" width="22" height="20" fill="#39ff88" opacity=".45"/>
+        <g fill="#0a0814">
+          <rect x="0" y="88" width="22" height="26"/><rect x="24" y="80" width="18" height="34"/><rect x="44" y="94" width="30" height="20"/>
+          <rect x="76" y="76" width="16" height="38"/><rect x="94" y="90" width="34" height="24"/><rect x="130" y="82" width="20" height="32"/>
+          <rect x="152" y="96" width="28" height="18"/><rect x="182" y="78" width="18" height="36"/><rect x="202" y="92" width="38" height="22"/>
+        </g>
+        <g fill="#ff9f1c"><rect x="28" y="86" width="2" height="2"/><rect x="34" y="94" width="2" height="2"/><rect x="134" y="90" width="2" height="2"/><rect x="208" y="98" width="2" height="2"/></g>
+        <g fill="#05d9e8"><rect x="80" y="84" width="2" height="2"/><rect x="186" y="90" width="2" height="2"/><rect x="100" y="98" width="2" height="2"/></g>
+        <rect x="83" y="78" width="2" height="30" fill="#ff2a6d" opacity=".9"/>
+      </symbol>
+
       <symbol id="m-homeassistant" viewBox="0 0 240 114">
         <rect width="240" height="114" fill="#f0f2f4"/>
         <rect width="240" height="16" fill="#18a6e8"/>
@@ -357,6 +381,10 @@ data:
           "Watches for Bluetooth trackers and gadgets nearby",
           "Compares what it hears with what's usual, and raises alerts",
           "Watches for Wi-Fi attacks and unexpected port forwards"]},
+        {id: "presto", name: "Presto photos", glaze: "#05d9e8", on: "#022a2e", points: [
+          "Sends photos from a phone to the Presto's slideshow",
+          "Shows exactly how each one will look on its screen",
+          "Fixes a crop, hides or deletes a photo"]},
         {id: "homeassistant", name: "Home Assistant", glaze: "#18a6e8", on: "#04222f", points: [
           "Talks to the thermostat over HomeKit",
           "Gives the wall panel its readings and controls",

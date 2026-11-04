@@ -81,7 +81,7 @@ data:
     			}
     		}
     	}
-    	@apps host jenkins.brick.nozdormu.cloud argocd.brick.nozdormu.cloud grafana.brick.nozdormu.cloud prometheus.brick.nozdormu.cloud wigle.brick.nozdormu.cloud radar.brick.nozdormu.cloud reader.brick.nozdormu.cloud overwatch.brick.nozdormu.cloud homeassistant.brick.nozdormu.cloud
+    	@apps host jenkins.brick.nozdormu.cloud argocd.brick.nozdormu.cloud grafana.brick.nozdormu.cloud prometheus.brick.nozdormu.cloud wigle.brick.nozdormu.cloud radar.brick.nozdormu.cloud reader.brick.nozdormu.cloud overwatch.brick.nozdormu.cloud homeassistant.brick.nozdormu.cloud presto.brick.nozdormu.cloud
     	handle @apps {
     		import traefik
     	}
