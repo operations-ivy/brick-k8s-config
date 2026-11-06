@@ -258,6 +258,23 @@ class TrialBranchTests(unittest.TestCase):
         app["spec"]["source"]["kustomize"] = {"images": ["whitepatrick/overwatch:dev-abc"]}
         self.assertIn({"op": "remove", "path": "/spec/source/kustomize"}, trial.patch(app, "main"))
 
+    def test_every_app_repo_has_its_images_listed(self):
+        # brick-k8s-config#98: presto was missing, so --dev refused it
+        import yaml
+
+        apps = set()
+        for f in (SCRIPTS.parent / "argocd" / "apps").glob("*.yaml"):
+            for doc in yaml.safe_load_all(f.read_text()):
+                if not doc or doc.get("kind") != "Application":
+                    continue
+                spec = doc["spec"]
+                for source in [spec["source"]] if "source" in spec else spec.get("sources", []):
+                    repo = source["repoURL"].rsplit("/", 1)[-1].removesuffix(".git")
+                    if source["repoURL"].startswith(trial.GIT + "operations-ivy/") and not repo.startswith("brick-"):
+                        apps.add(repo)
+        self.assertIn("presto", apps)
+        self.assertEqual(apps - set(trial.NO_IMAGES), set(trial.IMAGES))
+
     def test_a_helm_release_moves_its_values_not_its_chart(self):
         self.assertEqual(trial.patch(self.HELM, "b")[0]["path"], "/spec/sources/1/targetRevision")
         self.assertNotIn({"op": "add", "path": "/metadata/labels", "value": {}}, trial.patch(self.HELM, "b"))
