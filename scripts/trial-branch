@@ -35,12 +35,14 @@ LABEL = "brick-trial"
 ANNOTATION = "brick-trial-branch"
 GIT = "https://github.com/"
 HUB_REPO = "whitepatrick"
-# Each app's images, as in its kustomization.yaml.
+# Each app's images, as in its kustomization.yaml (tests check every app repo is here).
 IMAGES = {
     "chucks-wisdom": ["joke-importer", "joke-reader"],
     "overwatch": ["overwatch"],
+    "presto": ["presto-photos"],  # presto-feed, presto-photos-web and -convert all run it (#98)
     "wigle-sync": ["wigle-console", "wigle-sync"],
 }
+NO_IMAGES = ("home-assistant",)  # app repos that run someone else's image
 
 
 def kubectl(*args: str, input: str | None = None) -> str:
@@ -65,7 +67,9 @@ def git_source(app: dict) -> str:
 def dev_images(name: str, source: str, branch: str) -> list[str]:
     """The branch head's dev- images, checked to be on Docker Hub."""
     if name not in IMAGES:
-        raise SystemExit(f"{name}: no images of its own to try")
+        if name in NO_IMAGES:
+            raise SystemExit(f"{name}: no images of its own to try (it runs an upstream image)")
+        raise SystemExit(f"{name}: no images of its own to try (add it to IMAGES in scripts/trial-branch)")
     out = subprocess.run(["git", "ls-remote", source, f"refs/heads/{branch}"], capture_output=True, text=True)
     if out.returncode or not out.stdout:
         raise SystemExit(f"no branch {branch} on {source}")
