@@ -42,7 +42,7 @@ import urllib.request
 from datetime import datetime
 
 NAMESPACE = "whitepatrick"
-REPOS = ["wigle-sync", "wigle-console", "joke-reader", "joke-importer", "overwatch"]
+REPOS = ["wigle-sync", "wigle-console", "joke-reader", "joke-importer", "overwatch", "presto-photos"]
 # Every k3s node, by name (the router's DNS; validate --cluster checks the list).
 NODES = ["brick420", "brick2000", "brick666"]
 SSH_USER = "zaphod"
