@@ -1,0 +1,15 @@
+# /etc/rancher/k3s/registries.yaml on every node (scripts/join-worker on the
+# workers, by hand on brick420; README, "Images between nodes (Spegel)").
+#
+# k3s' embedded registry mirror (Spegel, `embedded-registry: true` on the
+# server) shares images the nodes already have, so a pod rescheduled during an
+# internet outage can start from a peer. Listing a registry here with no
+# endpoints turns the peer mirror on for it; a pull falls back to the registry
+# itself when no node has the image (brick-cicd-config#31). Every registry a
+# running image comes from (Argo CD's Redis is on ecr-public.aws.com).
+mirrors:
+  docker.io:
+  ecr-public.aws.com:
+  ghcr.io:
+  quay.io:
+  registry.k8s.io:

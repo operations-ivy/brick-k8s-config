@@ -10,6 +10,8 @@ import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
+
+import yaml
 from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
@@ -178,6 +180,11 @@ class JoinWorkerTests(unittest.TestCase):
         scoped = "[cm5]\n" + "\n".join(fan) + "\n"
         self.assertTrue(join_worker.with_case_fan(scoped, fan).endswith("\n".join(fan) + "\n"))
         self.assertIn("[all]", join_worker.with_case_fan(scoped, fan))
+
+    def test_registry_mirrors_cover_every_upstream_the_cluster_pulls_from(self):
+        config = yaml.safe_load(join_worker.REGISTRIES.read_text())
+        self.assertEqual(sorted(config["mirrors"]),
+                         ["docker.io", "ecr-public.aws.com", "ghcr.io", "quay.io", "registry.k8s.io"])
 
     def test_radio_rules_name_each_known_dongle_and_unmanage_it(self):
         rules = join_worker.radio_rules()
