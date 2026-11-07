@@ -16,12 +16,12 @@ zaphod with key login and passwordless sudo on <host>. It does the README's
 4. node-ip pinned to the host's IPv4 address in /etc/rancher/k3s/config.yaml
    (added to an existing file, never replacing it)
 5. persistent journald, 4 days, size-capped by disk type
-5b. k3s/registries.yaml as /etc/rancher/k3s/registries.yaml: the nodes share
-   images through k3s' embedded registry (Spegel); restarts a running agent
-   when it changes
 6. monitor-radio rules: a known monitor-mode Wi-Fi dongle, plugged in here
    now or later, is named wlmon0 and left alone by NetworkManager, for
    overwatch's Wi-Fi capture (Node Feature Discovery labels the node)
+6b. k3s/registries.yaml as /etc/rancher/k3s/registries.yaml: the nodes share
+   images through k3s' embedded registry (Spegel); restarts a running agent
+   when it changes
 7. the k3s agent at the cluster's exact version, with the join token piped
    from the control plane over SSH, never printed or written here
 8. wait for Ready, then check node-exporter and alloy run on it
