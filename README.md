@@ -483,7 +483,8 @@ No compliance requirements, so only the two newest versions of each app image
 are kept: on Docker Hub, in each node's containerd image store, and locally.
 Neither kubelet image GC (disk-pressure based) nor Docker Hub (no retention on
 this plan) can express "keep the last two versions", so
-`scripts/prune_images.py` does it explicitly. Run it after each release:
+`scripts/prune_images.py` does it explicitly. brick-cicd-config's
+`prune-images` Jenkins job runs it with `--apply` nightly; by hand:
 
 ```bash
 scripts/prune_images.py            # dry run: shows what would go
