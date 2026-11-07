@@ -16,6 +16,9 @@ zaphod with key login and passwordless sudo on <host>. It does the README's
 4. node-ip pinned to the host's IPv4 address in /etc/rancher/k3s/config.yaml
    (added to an existing file, never replacing it)
 5. persistent journald, 4 days, size-capped by disk type
+5b. k3s/registries.yaml as /etc/rancher/k3s/registries.yaml: the nodes share
+   images through k3s' embedded registry (Spegel); restarts a running agent
+   when it changes
 6. monitor-radio rules: a known monitor-mode Wi-Fi dongle, plugged in here
    now or later, is named wlmon0 and left alone by NetworkManager, for
    overwatch's Wi-Fi capture (Node Feature Discovery labels the node)
@@ -34,10 +37,13 @@ import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 USER = "zaphod"
 SERVER = "brick420"  # the control plane, which holds the join token
 SERVER_URL = f"https://{SERVER}:6443"  # the API certificate covers the name
+REGISTRIES = Path(__file__).resolve().parent.parent / "k3s" / "registries.yaml"
+REGISTRIES_ON_NODE = "/etc/rancher/k3s/registries.yaml"
 DAEMONSETS = ("prometheus-node-exporter", "alloy")
 JOURNALD = """[Journal]
 Storage=persistent
@@ -218,6 +224,16 @@ def join(host: str, dry: bool, say) -> None:
 
     installed = ssh(host, "k3s --version 2>/dev/null | head -1 || true")
     active = run(["ssh", "-o", "BatchMode=yes", f"{USER}@{host}", "systemctl is-active -q k3s-agent"]).returncode == 0
+
+    mirrors = REGISTRIES.read_text()
+    if ssh(host, f"sudo cat {REGISTRIES_ON_NODE} 2>/dev/null || true") == mirrors:
+        say("registry mirrors (Spegel): already set")
+    else:
+        say("registry mirrors (Spegel): " + ("update, restart the agent" if active else "write"))
+        if not dry:
+            ssh(host, f"sudo install -d /etc/rancher/k3s && sudo tee {REGISTRIES_ON_NODE} >/dev/null", input=mirrors)
+            if active:
+                ssh(host, "sudo systemctl restart k3s-agent")
     if active and version in installed:
         say(f"k3s agent: already {version}")
     else:

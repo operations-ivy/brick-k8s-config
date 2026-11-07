@@ -23,7 +23,9 @@ curl -sfL https://get.k3s.io | sudo sh -s - server \
 k3s ships Traefik and ServiceLB by default. Keep Traefik; turn ServiceLB off
 (`disable: [servicelb]` in `/etc/rancher/k3s/config.yaml`, then
 `sudo systemctl restart k3s`): kube-vip is the only load balancer (see
-"Front door on the cluster").
+"Front door on the cluster"). Also `embedded-registry: true` there, and
+`k3s/registries.yaml` as `/etc/rancher/k3s/registries.yaml` ("Images between
+nodes (Spegel)").
 
 ```bash
 sudo cat /var/lib/rancher/k3s/server/node-token   # needed by the worker
@@ -109,6 +111,28 @@ moving them, or they land there.
 4. Take it out of `scripts/prune_images.py`'s `NODES`. If the host stays,
    give it its own node-exporter and a static scrape job (as brick9000 and
    brick1982 have, in kube-prometheus-stack's values) so it's still measured.
+
+## Images between nodes (Spegel)
+
+The 2026-09-29 ISP outage showed a pod can't start without the internet when
+its node doesn't have the image (rescheduled, or after kubelet image GC):
+brick-cicd-config#31. k3s' embedded registry mirror (Spegel) has each node
+serve the images it already has to the others, so a pull goes to a peer
+first and to the registry only when no node has the image.
+
+- `embedded-registry: true` in brick420's `/etc/rancher/k3s/config.yaml`.
+- `k3s/registries.yaml` as `/etc/rancher/k3s/registries.yaml` on every node:
+  a registry listed there with no endpoints is shared between peers.
+  `scripts/join-worker` installs it on workers (and restarts a running agent
+  when it changes); on brick420 copy it by hand. A change to either file needs
+  `sudo systemctl restart k3s` (brick420) or `k3s-agent` (workers), one node at
+  a time.
+- No extra disk: peers are served from containerd's existing content store
+  (measured 2026-11-07: 1.2/5.3/3.3 GB on brick420/brick2000/brick666). It
+  can't help with an image no node has, or one kubelet's GC removed
+  everywhere; a pull-through cache would (not built).
+- Peers talk on TCP 5001 (the nodes have no firewall); images tagged
+  `latest` aren't shared.
 
 ## Keep workloads off the control plane
 

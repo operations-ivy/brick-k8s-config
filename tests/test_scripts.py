@@ -179,6 +179,12 @@ class JoinWorkerTests(unittest.TestCase):
         self.assertTrue(join_worker.with_case_fan(scoped, fan).endswith("\n".join(fan) + "\n"))
         self.assertIn("[all]", join_worker.with_case_fan(scoped, fan))
 
+    def test_registry_mirrors_cover_every_upstream_the_cluster_pulls_from(self):
+        text = join_worker.REGISTRIES.read_text()
+        mirrors = [line.strip().rstrip(":") for line in text.splitlines() if line.startswith("  ") and line.endswith(":")]
+        self.assertEqual(mirrors, ["docker.io", "ecr-public.aws.com", "ghcr.io", "quay.io", "registry.k8s.io"])
+        self.assertIn("\nmirrors:\n", "\n" + text)
+
     def test_radio_rules_name_each_known_dongle_and_unmanage_it(self):
         rules = join_worker.radio_rules()
         udev, nm = rules[join_worker.UDEV_RULES], rules[join_worker.NM_UNMANAGED]
