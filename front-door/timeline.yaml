@@ -1,0 +1,94 @@
+# timeline.brick.nozdormu.cloud's live half: every hour, timeline-feed reads the
+# merged pull requests of the public operations-ivy repos from GitHub and writes
+# them, a TimelineJS3 slide per repo per week, as feed.json into the ConfigMap
+# timeline-feed. Caddy serves it beside the page (timeline-site.yaml). That
+# ConfigMap is the job's, not git's: Argo CD doesn't track it, so it doesn't
+# put it back. If GitHub can't be read, the last feed stays.
+#
+# A stock Python image (the script is standard library only, timeline/feed.py),
+# pinned by digest. Health in the Pushgateway: timeline_feed_success,
+# timeline_feed_last_success_timestamp_seconds.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: timeline-feed
+  namespace: front-door
+---
+# Writing its own ConfigMap. RBAC can't limit create to a name, so create is
+# namespace-wide; update only names timeline-feed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: timeline-feed
+  namespace: front-door
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames: [timeline-feed]
+    verbs: [get, update]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: timeline-feed
+  namespace: front-door
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: timeline-feed
+subjects:
+  - kind: ServiceAccount
+    name: timeline-feed
+    namespace: front-door
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: timeline-feed
+  namespace: front-door
+spec:
+  schedule: "17 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: timeline-feed
+        spec:
+          serviceAccountName: timeline-feed
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: feed
+              image: docker.io/library/python:3.12-alpine@sha256:e064671ca452259bab50e8e2c7bd896e39e9a343bb06ca25234adf6fe18d0fc7
+              imagePullPolicy: IfNotPresent
+              command: [python3, -I, /opt/timeline/feed.py]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+              volumeMounts:
+                - {name: script, mountPath: /opt/timeline, readOnly: true}
+          volumes:
+            - name: script
+              configMap:
+                name: timeline-feed-script

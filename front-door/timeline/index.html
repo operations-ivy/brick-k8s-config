@@ -1,0 +1,138 @@
+<!doctype html>
+<!-- timeline.brick.nozdormu.cloud: the brick homelab's history in TimelineJS3
+     (Knight Lab, vendored: no outside requests). Two halves, merged here:
+     timeline-history.yaml (the curated milestones) and feed.json (every merged
+     pull request, a slide per repo per week, refreshed hourly by the
+     timeline-feed job). If the feed is missing, the milestones still show. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>brick timeline</title>
+<link rel="stylesheet" href="timelinejs3-3.9.13.dark.css">
+<style>
+  /* The board's palette (brick-status, since the redesign) over TimelineJS3's dark theme. */
+  :root {
+    --void: #04050a; --panel: #0a0e19; --edge: #1a2442; --grid: #0e1630;
+    --text: #c9f3ff; --dim: #5b7799; --cyan: #00eaff; --magenta: #ff2bd6;
+    --mono: "IBM Plex Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+  }
+  html, body { height: 100%; margin: 0; background: var(--void); color: var(--text); }
+  body {
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  #timeline { width: 100%; height: 100vh; }
+  /* Only when something's wrong; the feed's time is on the title slide. */
+  #status { display: none; position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 50;
+            font: 12px var(--mono); color: var(--magenta); background: var(--panel); border: 1px solid var(--magenta);
+            padding: 2px 8px; }
+  #status.bad { display: block; }
+
+  .tl-timeline { background: transparent; color: var(--text); }
+  /* The slides over the grid, not on the theme's own background. */
+  .tl-storyslider, .tl-slider-container-mask, .tl-slider-container, .tl-slider-item-container,
+  .tl-slide, .tl-slider-background { background: transparent !important; }
+  .tl-timegroup { background-color: rgba(14, 22, 48, 0.55); }
+  .tl-timegroup.tl-timegroup-alternate { background-color: rgba(10, 14, 25, 0.75); }
+  .tl-timeline h2.tl-headline-title, .tl-timeline h2.tl-headline, .tl-timeline h3 { color: var(--cyan);
+    text-shadow: 0.04em 0 var(--magenta), -0.04em 0 var(--cyan); letter-spacing: 0.02em; }
+  .tl-timeline p, .tl-timeline li { color: var(--text); }
+  .tl-timeline a { color: var(--cyan); }
+  .tl-timeline code { color: var(--magenta); }
+  .tl-headline-date, .tl-timeline h3.tl-headline-date { color: var(--magenta); text-shadow: none; font-family: var(--mono); }
+  .tl-text ul { text-align: left; padding-left: 1.2em; font-size: 0.85em; }
+  .tl-text li { margin: 0.15em 0; }
+  .tl-timenav { background: rgba(10, 14, 25, 0.92); border-top: 2px solid var(--edge); }
+  .tl-timenav .tl-timeaxis { background: var(--panel); }
+  .tl-timenav .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-major .tl-timeaxis-tick-text,
+  .tl-timenav .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-minor .tl-timeaxis-tick-text { color: var(--dim); }
+  .tl-timemarker .tl-timemarker-content-container { background: var(--panel); border: 1px solid var(--edge); }
+  .tl-timemarker .tl-timemarker-content-container .tl-timemarker-content .tl-timemarker-text h2.tl-headline { color: var(--text); text-shadow: none; }
+  .tl-timemarker.tl-timemarker-active .tl-timemarker-content-container { background: var(--cyan); border-color: var(--cyan); }
+  .tl-timemarker.tl-timemarker-active .tl-timemarker-content-container .tl-timemarker-content .tl-timemarker-text h2.tl-headline { color: var(--void); }
+  .tl-timemarker .tl-timemarker-line-left, .tl-timemarker .tl-timemarker-line-right { border-color: var(--edge); }
+  .tl-timemarker.tl-timemarker-active .tl-timemarker-line-left, .tl-timemarker.tl-timemarker-active .tl-timemarker-line-right { border-color: var(--cyan); }
+  .tl-timegroup .tl-timegroup-message { color: var(--magenta); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+  .tl-timeera .tl-timeera-background { opacity: 0.25; }
+  .tl-slidenav-next .tl-slidenav-title, .tl-slidenav-previous .tl-slidenav-title { color: var(--cyan); }
+  .tl-slidenav-next .tl-slidenav-description, .tl-slidenav-previous .tl-slidenav-description { color: var(--dim); }
+  .tl-feed-note { font: 0.8em var(--mono); color: var(--dim) !important; }
+  .tl-menubar-button { background: var(--panel); color: var(--cyan); border-color: var(--edge); }
+</style>
+</head>
+<body>
+<div id="timeline"></div>
+<div id="status"></div>
+<script src="js-yaml-5.5.0.min.js"></script>
+<script src="timelinejs3-3.9.13.js"></script>
+<script>
+"use strict";
+const ERA_COLOURS = ["#ff2bd6", "#5b7799", "#1a2442", "#00eaff", "#39ff6a"];
+
+// A YAML date comes back from js-yaml as a Date (UTC midnight); a string also works.
+function tlDate(d) {
+  const day = d instanceof Date ? d : new Date(`${d}T00:00:00Z`);
+  return { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate() };
+}
+
+function milestones(history) {
+  return (history.events || []).map((e, i) => ({
+    start_date: tlDate(e.date),
+    group: e.group,
+    unique_id: `m-${i}`,
+    text: { headline: e.headline, text: e.text || "" },
+  }));
+}
+
+function eras(history) {
+  const today = new Date();
+  return (history.eras || []).map((e, i) => ({
+    start_date: tlDate(e.start),
+    end_date: tlDate(e.end || today),
+    text: { headline: e.headline },
+    background: { color: ERA_COLOURS[i % ERA_COLOURS.length] },
+  }));
+}
+
+async function load() {
+  const status = document.getElementById("status");
+  const history = jsyaml.load(await (await fetch("timeline-history.yaml", { cache: "no-cache" })).text());
+  let feed = { events: [] };
+  try {
+    const reply = await fetch("feed.json", { cache: "no-cache" });
+    if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+    feed = await reply.json();
+    const prs = Object.values(feed.pull_requests || {}).reduce((a, b) => a + b, 0);
+    history.title.text += `<p class="tl-feed-note">${prs} merged pull requests, as of ${new Date(feed.generated).toLocaleString()}.</p>`;
+  } catch (e) {
+    status.textContent = "pull requests unavailable: milestones only";
+    status.classList.add("bad");
+  }
+  const events = [...milestones(history), ...(feed.events || [])];
+  const data = { title: { text: history.title }, eras: eras(history), events };
+  // Open on the day homelab-context started (slide 0 is the title).
+  const sorted = events.map(e => e.start_date).map(d => Date.UTC(d.year, d.month - 1, d.day)).sort((a, b) => a - b);
+  const start = sorted.findIndex(t => t >= Date.UTC(2026, 9, 10));
+  new TL.Timeline("timeline", data, {
+    script_path: "./",      // nothing else to load: the font and language are built in
+    font: null,
+    language: "en",
+    hash_bookmark: true,
+    start_at_slide: start < 0 ? 0 : start + 1,
+    timenav_height_percentage: 40,
+    initial_zoom: 5,
+    scale_factor: 1,
+    marker_height_min: 24,
+    optimal_tick_width: 90,
+  });
+}
+load().catch(e => {
+  const status = document.getElementById("status");
+  status.textContent = `timeline failed to load: ${e.message}`;
+  status.classList.add("bad");
+});
+</script>
+</body>
+</html>

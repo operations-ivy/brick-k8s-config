@@ -41,8 +41,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-# Not Kubernetes manifests: Helm values, the validate config, BuildKit config.
-NOT_MANIFESTS = {"validate.yaml"}
+# Not Kubernetes manifests: Helm values, the validate config, BuildKit config,
+# the timeline's curated history, and k3s's registries.yaml (host config).
+NOT_MANIFESTS = {"validate.yaml", "timeline-history.yaml", "registries.yaml"}
 
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:

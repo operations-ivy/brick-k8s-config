@@ -81,6 +81,14 @@ data:
     			}
     		}
     	}
+    	# The timeline: TimelineJS3, the page and the curated milestones from
+    	# ConfigMaps (timeline-site.yaml), feed.json from the hourly timeline-feed
+    	# job (timeline.yaml). Static: nothing else to reach.
+    	@timeline host timeline.brick.nozdormu.cloud
+    	handle @timeline {
+    		root * /srv/timeline
+    		file_server
+    	}
     	@apps host jenkins.brick.nozdormu.cloud argocd.brick.nozdormu.cloud grafana.brick.nozdormu.cloud prometheus.brick.nozdormu.cloud wigle.brick.nozdormu.cloud radar.brick.nozdormu.cloud reader.brick.nozdormu.cloud overwatch.brick.nozdormu.cloud homeassistant.brick.nozdormu.cloud presto.brick.nozdormu.cloud
     	handle @apps {
     		import traefik
@@ -161,7 +169,7 @@ spec:
         app.kubernetes.io/name: caddy
       annotations:
         # Restart when the Caddyfile changes (bump by hand with it).
-        brick/caddyfile-rev: "6"
+        brick/caddyfile-rev: "7"
     spec:
       nodeSelector:
         chuck.io/storage-node: "true"
@@ -176,6 +184,7 @@ spec:
           volumeMounts:
             - {name: caddyfile, mountPath: /etc/caddy}
             - {name: catalog, mountPath: /srv/catalog, readOnly: true}
+            - {name: timeline, mountPath: /srv/timeline, readOnly: true}
             - {name: data, mountPath: /data}
             - {name: porkbun, mountPath: /run/secrets/porkbun, readOnly: true}
           readinessProbe:
@@ -197,6 +206,14 @@ spec:
         - name: catalog
           configMap:
             name: catalog
+        # timeline.brick.nozdormu.cloud: one folder from three ConfigMaps. The
+        # feed is optional: it appears after the job's first run.
+        - name: timeline
+          projected:
+            sources:
+              - configMap: {name: timeline-site}
+              - configMap: {name: timeline-vendor}
+              - configMap: {name: timeline-feed, optional: true}
         - name: data
           persistentVolumeClaim:
             claimName: caddy-data
