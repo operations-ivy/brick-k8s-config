@@ -1,0 +1,225 @@
+<!doctype html>
+<!-- timeline.brick.nozdormu.cloud: the brick homelab's history in TimelineJS3
+     (Knight Lab, vendored: no outside requests). Two halves, merged here:
+     timeline-history.yaml (the curated milestones) and feed.json (every merged
+     pull request, a slide per repo per week, refreshed hourly by the
+     timeline-feed job). If the feed is missing, the milestones still show. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>brick timeline</title>
+<link rel="stylesheet" href="timelinejs3-3.9.13.dark.css">
+<style>
+  /* The board's palette (brick-status, since the redesign) over TimelineJS3's dark theme. */
+  :root {
+    --void: #04050a; --panel: #0a0e19; --edge: #1a2442; --grid: #0e1630;
+    --text: #c9f3ff; --dim: #5b7799; --cyan: #00eaff; --magenta: #ff2bd6;
+    --mono: "IBM Plex Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+  }
+  html, body { height: 100%; margin: 0; background: var(--void); color: var(--text); }
+  body {
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  #timeline { width: 100%; height: 100vh; }
+  /* Only when something's wrong; the feed's time is on the title slide. */
+  #status { display: none; position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 50;
+            font: 12px var(--mono); color: var(--magenta); background: var(--panel); border: 1px solid var(--magenta);
+            padding: 2px 8px; }
+  #status.bad { display: block; }
+
+  .tl-timeline { background: transparent; color: var(--text); }
+  /* The slides over the grid, not on the theme's own background. */
+  .tl-storyslider, .tl-slider-container-mask, .tl-slider-container, .tl-slider-item-container,
+  .tl-slide, .tl-slider-background { background: transparent !important; }
+  .tl-timegroup { background-color: rgba(14, 22, 48, 0.55); }
+  .tl-timegroup.tl-timegroup-alternate { background-color: rgba(10, 14, 25, 0.75); }
+  .tl-timeline h2.tl-headline-title, .tl-timeline h2.tl-headline, .tl-timeline h3 { color: var(--cyan);
+    text-shadow: 0.04em 0 var(--magenta), -0.04em 0 var(--cyan); letter-spacing: 0.02em; }
+  .tl-timeline p, .tl-timeline li { color: var(--text); }
+  .tl-timeline a { color: var(--cyan); }
+  .tl-timeline code { color: var(--magenta); }
+  .tl-headline-date, .tl-timeline h3.tl-headline-date { color: var(--magenta); text-shadow: none; font-family: var(--mono); }
+  .tl-text ul { text-align: left; padding-left: 1.2em; font-size: 0.85em; }
+  .tl-text li { margin: 0.15em 0; }
+  .tl-timenav { background: rgba(10, 14, 25, 0.92); border-top: 2px solid var(--edge); }
+  .tl-timenav .tl-timeaxis { background: var(--panel); }
+  .tl-timenav .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-major .tl-timeaxis-tick-text,
+  .tl-timenav .tl-timeaxis .tl-timeaxis-content-container .tl-timeaxis-minor .tl-timeaxis-tick-text { color: var(--dim); }
+  .tl-timemarker .tl-timemarker-content-container { background: var(--panel); border: 1px solid var(--edge); }
+  .tl-timemarker .tl-timemarker-content-container .tl-timemarker-content .tl-timemarker-text h2.tl-headline { color: var(--text); text-shadow: none; }
+  .tl-timemarker.tl-timemarker-active .tl-timemarker-content-container { background: var(--cyan); border-color: var(--cyan); }
+  .tl-timemarker.tl-timemarker-active .tl-timemarker-content-container .tl-timemarker-content .tl-timemarker-text h2.tl-headline { color: var(--void); }
+  .tl-timemarker .tl-timemarker-line-left, .tl-timemarker .tl-timemarker-line-right { border-color: var(--edge); }
+  .tl-timemarker.tl-timemarker-active .tl-timemarker-line-left, .tl-timemarker.tl-timemarker-active .tl-timemarker-line-right { border-color: var(--cyan); }
+  .tl-timegroup .tl-timegroup-message { color: var(--magenta); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+  .tl-timeera .tl-timeera-background { opacity: 0.25; }
+  .tl-slidenav-next .tl-slidenav-title, .tl-slidenav-previous .tl-slidenav-title { color: var(--cyan); }
+  .tl-slidenav-next .tl-slidenav-description, .tl-slidenav-previous .tl-slidenav-description { color: var(--dim); }
+  /* Pizazz: the board's TV static between slides, a glitch as each headline
+     tunes in, glowing art. All of it stops for prefers-reduced-motion. */
+  #static { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 40; pointer-events: none;
+            display: none; image-rendering: pixelated; opacity: 0.85; }
+  .tl-slide.tuned h2.tl-headline, .tl-slide.tuned h2.tl-headline-title { animation: tune-in 0.6s steps(1) 1; }
+  @keyframes tune-in {
+    0% { transform: translateX(0.12em) skewX(-12deg); opacity: 0.3; }
+    20% { transform: translateX(-0.08em); opacity: 1; }
+    40% { transform: translateX(0.04em) skewX(6deg); }
+    60%, 100% { transform: none; }
+  }
+  .tl-slide .tl-media img { border-radius: 10px; box-shadow: 0 0 24px rgba(0, 234, 255, 0.25), 0 0 2px #00eaff; }
+  .tl-slide-titleslide .tl-media img { box-shadow: 0 0 40px rgba(255, 43, 214, 0.45), 0 0 2px #ff2bd6; }
+  .tl-slide-titleslide h2.tl-headline-title { font-size: 3em; animation: glitch 3s steps(1) infinite; }
+  @keyframes glitch { 0%, 90% { transform: none; } 92% { transform: translateX(0.06em) skewX(-8deg); }
+                      94% { transform: translateX(-0.05em); } 96% { transform: skewX(5deg); } }
+  .tl-timeera .tl-timeera-background { opacity: 0.4; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  .tl-feed-note { font: 0.8em var(--mono); color: var(--dim) !important; }
+  .tl-menubar-button { background: var(--panel); color: var(--cyan); border-color: var(--edge); }
+</style>
+</head>
+<body>
+<div id="timeline"></div>
+<div id="status"></div>
+<canvas id="static"></canvas>
+<script src="js-yaml-5.5.0.min.js"></script>
+<script src="timelinejs3-3.9.13.js"></script>
+<script>
+"use strict";
+const ERA_COLOURS = ["#ffb300", "#39ff6a", "#5b7799", "#00eaff", "#ff2bd6"];
+const PR_COLOUR = "#5b7799";
+const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+// A YAML date comes back from js-yaml as a Date (UTC midnight); a string also works.
+function tlDate(d) {
+  const day = d instanceof Date ? d : new Date(`${d}T00:00:00Z`);
+  return { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate() };
+}
+
+// Each milestone gets its row's picture (or its own) and an id that names its
+// row, which the track's markers are coloured by (rowStyles).
+function milestones(history) {
+  const rows = history.rows || {};
+  return (history.events || []).map((e, i) => ({
+    start_date: tlDate(e.date),
+    group: e.group,
+    unique_id: `m-${slug(e.group)}-${i}`,
+    text: { headline: e.headline, text: e.text || "" },
+    media: { url: `art-${e.art || rows[e.group]?.art || "origins"}.svg`, alt: e.headline },
+  }));
+}
+
+function rowStyles(history) {
+  const rule = (prefix, c) => `
+    [id^="${prefix}"] .tl-timemarker-content-container { border-left: 4px solid ${c}; }
+    [id^="${prefix}"].tl-timemarker-active .tl-timemarker-content-container { background: ${c}; border-color: ${c}; box-shadow: 0 0 14px ${c}; }
+    [id^="${prefix}"] .tl-timemarker-line-left, [id^="${prefix}"] .tl-timemarker-line-right { border-color: ${c}; }`;
+  const css = Object.entries(history.rows || {}).map(([group, row]) => rule(`m-${slug(group)}-`, row.colour)).join("")
+    + rule("pr-", PR_COLOUR);
+  document.head.insertAdjacentHTML("beforeend", `<style>${css}</style>`);
+}
+
+// The rows' names in their colours, once TimelineJS has drawn them.
+function colourRowNames(history) {
+  for (const el of document.querySelectorAll(".tl-timegroup-message")) {
+    const row = (history.rows || {})[el.textContent.trim()];
+    if (row) el.style.color = row.colour;
+  }
+}
+
+// The board's static (brick-status, static/index.html): six frames from all noise
+// to a last few bars, 55 ms each.
+const STATIC_FRAMES = [1.0, 0.8, 0.55, 0.35, 0.18, 0.07];
+const STATIC_COLOURS = ["#00eaff", "#1a2442", "#0a0e19", "#ff2bd6", "#5b7799"];
+function drawStatic(canvas, cover) {
+  const w = canvas.width = Math.max(1, Math.round(canvas.clientWidth / 4));
+  const h = canvas.height = Math.max(1, Math.round(canvas.clientHeight / 4));
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  if (cover >= 1) { ctx.fillStyle = "rgba(4,5,10,0.6)"; ctx.fillRect(0, 0, w, h); }
+  const k = w / 240;
+  for (let i = 0; i < Math.round(160 * cover * k); i++) {
+    ctx.fillStyle = STATIC_COLOURS[Math.floor(Math.random() * STATIC_COLOURS.length)];
+    ctx.fillRect(Math.round((Math.random() * 250 - 30) * k), Math.floor(Math.random() * h),
+                 Math.round((15 + Math.random() * 125) * k), 1 + Math.floor(Math.random() * 2));
+  }
+}
+let tuning = false;
+function tuneIn() {
+  if (tuning || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const canvas = document.getElementById("static");
+  tuning = true;
+  canvas.style.display = "block";
+  let frame = 0;
+  const step = () => {
+    if (frame < STATIC_FRAMES.length) { drawStatic(canvas, STATIC_FRAMES[frame++]); setTimeout(step, 55); }
+    else { canvas.style.display = "none"; tuning = false; }
+  };
+  step();
+}
+function glitchHeadline() {
+  for (const el of document.querySelectorAll(".tl-slide.tuned")) el.classList.remove("tuned");
+  // TimelineJS marks no slide active: the one on screen is the one nearest the left edge.
+  const active = [...document.querySelectorAll(".tl-slide")]
+    .map(el => [el, Math.abs(el.getBoundingClientRect().left)]).sort((a, b) => a[1] - b[1])[0]?.[0];
+  if (active) { void active.offsetWidth; active.classList.add("tuned"); }
+}
+
+function eras(history) {
+  const today = new Date();
+  return (history.eras || []).map((e, i) => ({
+    start_date: tlDate(e.start),
+    end_date: tlDate(e.end || today),
+    text: { headline: e.headline },
+    background: { color: ERA_COLOURS[i % ERA_COLOURS.length] },
+  }));
+}
+
+async function load() {
+  const status = document.getElementById("status");
+  const history = jsyaml.load(await (await fetch("timeline-history.yaml", { cache: "no-cache" })).text());
+  let feed = { events: [] };
+  try {
+    const reply = await fetch("feed.json", { cache: "no-cache" });
+    if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
+    feed = await reply.json();
+    const prs = Object.values(feed.pull_requests || {}).reduce((a, b) => a + b, 0);
+    history.title.text += `<p class="tl-feed-note">${prs} merged pull requests, as of ${new Date(feed.generated).toLocaleString()}.</p>`;
+  } catch (e) {
+    status.textContent = "pull requests unavailable: milestones only";
+    status.classList.add("bad");
+  }
+  const pulls = (feed.events || []).map(e => ({ media: { url: "art-pulls.svg", alt: "merged pull requests" }, ...e }));
+  const events = [...milestones(history), ...pulls];
+  const data = { title: { text: history.title, media: { url: "art-title.svg", alt: "BRICK//NET" } },
+                 eras: eras(history), events };
+  rowStyles(history);
+  // Open on the day homelab-context started (slide 0 is the title).
+  const sorted = events.map(e => e.start_date).map(d => Date.UTC(d.year, d.month - 1, d.day)).sort((a, b) => a - b);
+  const start = sorted.findIndex(t => t >= Date.UTC(2026, 9, 10));
+  const timeline = new TL.Timeline("timeline", data, {
+    script_path: "./",      // nothing else to load: the font and language are built in
+    font: null,
+    language: "en",
+    hash_bookmark: true,
+    start_at_slide: start < 0 ? 0 : start + 1,
+    timenav_height_percentage: 40,
+    initial_zoom: 5,
+    scale_factor: 1,
+    marker_height_min: 24,
+    optimal_tick_width: 90,
+  });
+  timeline.on("loaded", () => setTimeout(() => colourRowNames(history), 0));
+  timeline.on("change", () => { tuneIn(); setTimeout(glitchHeadline, 120); });
+  setTimeout(() => colourRowNames(history), 1500);
+}
+load().catch(e => {
+  const status = document.getElementById("status");
+  status.textContent = `timeline failed to load: ${e.message}`;
+  status.classList.add("bad");
+});
+</script>
+</body>
+</html>

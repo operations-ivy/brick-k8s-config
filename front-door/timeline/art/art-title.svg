@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img"><title>BRICK//NET</title>
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#04050a"/><stop offset=".6" stop-color="#1a0630"/><stop offset="1" stop-color="#04050a"/></linearGradient>
+<linearGradient id="sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb300"/><stop offset="1" stop-color="#ff2bd6"/></linearGradient>
+<filter id="g" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<clipPath id="half"><rect x="0" y="0" width="640" height="215"/></clipPath></defs>
+<rect width="640" height="360" fill="url(#sky)"/>
+<g fill="#c9f3ff"><circle cx="60" cy="40" r="1.5"/><circle cx="150" cy="80" r="1"/><circle cx="520" cy="50" r="1.5"/><circle cx="590" cy="120" r="1"/><circle cx="410" cy="30" r="1"/></g>
+<g clip-path="url(#half)"><circle cx="320" cy="215" r="95" fill="url(#sun)" filter="url(#g)"/><g fill="#1a0630"><rect x="200" y="160" width="240" height="5"/><rect x="200" y="178" width="240" height="7"/><rect x="200" y="196" width="240" height="9"/></g></g>
+<g stroke="#ff2bd6" stroke-width="1.5" opacity=".8"><path d="M0 215H640"/>
+<path d="M0 230H640M0 250H640M0 278H640M0 315H640"><animateTransform attributeName="transform" type="translate" values="0 0;0 8;0 0" dur="2s" repeatCount="indefinite"/></path>
+<path d="M320 215L320 360M320 215L200 360M320 215L440 360M320 215L80 360M320 215L560 360M320 215L-40 360M320 215L680 360"/></g>
+<g font-family="monospace" font-weight="bold" font-size="64" text-anchor="middle" filter="url(#g)"><text x="324" y="110" fill="#ff2bd6">BRICK//NET</text><text x="316" y="110" fill="#00eaff">BRICK//NET</text><text x="320" y="110" fill="#c9f3ff">BRICK<tspan fill="#ff2bd6">//</tspan>NET</text></g>
+</svg>
