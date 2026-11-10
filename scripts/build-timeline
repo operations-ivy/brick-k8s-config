@@ -49,11 +49,17 @@ class Literal(str):
     """A string written as a YAML block, so the files stay readable in diffs."""
 
 
-def _literal(dumper: yaml.Dumper, value: Literal) -> yaml.ScalarNode:
-    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style="|")
+class Dumper(yaml.SafeDumper):
+    """SafeDumper that writes Literal strings as blocks."""
 
 
-yaml.add_representer(Literal, _literal)
+Dumper.add_representer(
+    Literal, lambda dumper, value: dumper.represent_scalar("tag:yaml.org,2002:str", value, style="|"))
+
+
+def wants_block(text: str) -> bool:
+    """More than one line, or long: a block reads better than one quoted line."""
+    return "\n" in text.rstrip("\n") or len(text) > 200
 
 
 def configmap(name: str, files: list[str]) -> dict:
@@ -64,7 +70,7 @@ def configmap(name: str, files: list[str]) -> dict:
         if text is None or any(c in text for c in YAML_BREAKS):
             binary[path.name] = base64.b64encode(path.read_bytes()).decode()
         else:
-            data[path.name] = Literal(text) if "\n" in text.rstrip("\n") or len(text) > 200 else text
+            data[path.name] = Literal(text) if wants_block(text) else text
     cm = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -84,11 +90,11 @@ def configmap(name: str, files: list[str]) -> dict:
 
 def render() -> str:
     docs = [configmap(name, files) for name, files in CONFIGMAPS.items()]
-    return HEADER + yaml.dump_all(docs, sort_keys=False, width=10_000, allow_unicode=True)
+    return HEADER + yaml.dump_all(docs, Dumper=Dumper, sort_keys=False, width=10_000, allow_unicode=True)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="exit 1 if the file is out of date")
     args = parser.parse_args()
     text = render()

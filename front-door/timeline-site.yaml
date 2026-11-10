@@ -1054,7 +1054,9 @@ data:
     import time
     import urllib.error
     import urllib.request
+    from collections.abc import Callable
     from datetime import date, datetime, timedelta, timezone
+    from typing import Any
 
     OWNER = "operations-ivy"
     # The public repos only: the private ones aren't readable without a token.
@@ -1072,20 +1074,23 @@ data:
     PUSHGATEWAY = os.environ.get("PUSHGATEWAY_URL", "http://pushgateway-prometheus-pushgateway.monitoring:9091")
 
 
-    def get_json(url: str, headers: dict[str, str] | None = None):
+    Fetch = Callable[[str], Any]
+
+
+    def get_json(url: str) -> Any:
         req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                   "User-Agent": "brick-timeline-feed", **(headers or {})})
+                                                   "User-Agent": "brick-timeline-feed"})
         with urllib.request.urlopen(req, timeout=30) as reply:
             return json.load(reply)
 
 
-    def merged_pulls(repo: str, fetch=get_json) -> list[dict]:
+    def merged_pulls(repo: str, fetch: Fetch = get_json) -> list[dict]:
         """Every merged pull request of one repo: number, title, url, merged (a datetime)."""
         found = []
         for page in range(1, MAX_PAGES + 1):
             batch = fetch(f"{API}/repos/{OWNER}/{repo}/pulls?state=closed&per_page={PER_PAGE}&page={page}")
             found += [{"number": p["number"], "title": p["title"], "url": p["html_url"],
-                       "merged": datetime.fromisoformat(p["merged_at"].replace("Z", "+00:00"))}
+                       "merged": datetime.fromisoformat(p["merged_at"])}
                       for p in batch if p.get("merged_at")]
             if len(batch) < PER_PAGE:
                 break
@@ -1106,9 +1111,9 @@ data:
                 weeks.setdefault((repo, week_of(pr["merged"])), []).append(pr)
         events = []
         for (repo, monday), prs in sorted(weeks.items(), key=lambda kv: (kv[0][1], kv[0][0])):
-            prs.sort(key=lambda p: p["merged"], reverse=True)
+            newest_first = sorted(prs, key=lambda p: p["merged"], reverse=True)
             items = "".join(f'<li><a href="{html.escape(p["url"])}" target="_blank" rel="noopener">#{p["number"]}</a> '
-                            f'{html.escape(p["title"])}</li>' for p in prs)
+                            f'{html.escape(p["title"])}</li>' for p in newest_first)
             count = f'{len(prs)} pull request{"s" if len(prs) != 1 else ""} merged'
             events.append({
                 "start_date": {"year": monday.year, "month": monday.month, "day": monday.day},
@@ -1120,10 +1125,10 @@ data:
         return events
 
 
-    def feed(fetch=get_json, now: float | None = None) -> dict:
+    def feed(fetch: Fetch = get_json, now: float | None = None) -> dict:
         pulls = {repo: merged_pulls(repo, fetch) for repo in REPOS}
         return {
-            "generated": datetime.fromtimestamp(now or time.time(), timezone.utc).isoformat(timespec="seconds"),
+            "generated": datetime.fromtimestamp(time.time() if now is None else now, timezone.utc).isoformat(timespec="seconds"),
             "pull_requests": {repo: len(prs) for repo, prs in pulls.items()},
             "events": slides(pulls),
         }
@@ -1158,17 +1163,18 @@ data:
             raise RuntimeError(f"writing ConfigMap {CONFIGMAP}: HTTP {status}")
 
 
-    def push_metrics(data: dict, ok: bool) -> None:
-        """Best effort: the job's result, for Grafana and alerts."""
-        lines = [f"timeline_feed_success {1 if ok else 0}"]
-        if ok:
+    def push_metrics(data: dict | None) -> None:
+        """Best effort: the job's result for Grafana and alerts; None for a failed run."""
+        lines = [f"timeline_feed_success {0 if data is None else 1}"]
+        if data is not None:
             lines += [f"timeline_feed_last_success_timestamp_seconds {time.time():.0f}",
                       f"timeline_feed_slides {len(data['events'])}"]
             lines += [f'timeline_feed_pull_requests{{repo="{r}"}} {n}' for r, n in data["pull_requests"].items()]
         req = urllib.request.Request(f"{PUSHGATEWAY}/metrics/job/timeline-feed", method="PUT",
                                      data=("\n".join(lines) + "\n").encode())
         try:
-            urllib.request.urlopen(req, timeout=10).close()
+            with urllib.request.urlopen(req, timeout=10):
+                pass
         except OSError as e:
             print(f"timeline-feed: no metrics pushed: {e}", file=sys.stderr)
 
@@ -1182,14 +1188,14 @@ data:
         except (OSError, ValueError, KeyError) as e:
             print(f"timeline-feed: GitHub unreadable, the last feed stays: {e}", file=sys.stderr)
             if not args.stdout:
-                push_metrics({}, ok=False)
+                push_metrics(None)
             return 1
         text = json.dumps(data, separators=(",", ":"))
         if args.stdout:
             print(text)
             return 0
         write_configmap(text)
-        push_metrics(data, ok=True)
+        push_metrics(data)
         print(f"timeline-feed: {len(data['events'])} slides from {sum(data['pull_requests'].values())} pull requests")
         return 0
 

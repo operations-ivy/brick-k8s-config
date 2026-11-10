@@ -43,7 +43,9 @@ class FeedTest(unittest.TestCase):
         self.assertEqual(found[0]["merged"], datetime(2026, 11, 3, 10, tzinfo=timezone.utc))
 
     def test_a_slide_per_repo_per_week_newest_first_and_escaped(self):
-        merged = lambda s: datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+        def merged(s):
+            return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+
         pulls = {"presto": [{"number": 1, "title": "Old <b>", "url": "u1", "merged": merged("2026-11-03T09:00")},
                             {"number": 2, "title": "New", "url": "u2", "merged": merged("2026-11-08T23:00")},
                             {"number": 3, "title": "Next week", "url": "u3", "merged": merged("2026-11-09T01:00")}],
@@ -70,7 +72,7 @@ class FeedTest(unittest.TestCase):
                 mock.patch.object(sys, "argv", ["feed.py"]):
             self.assertEqual(feed.main(), 1)
         write.assert_not_called()
-        push.assert_called_once_with({}, ok=False)
+        push.assert_called_once_with(None)
 
     def test_a_good_run_writes_the_configmap_and_pushes(self):
         data = {"generated": "x", "pull_requests": {"presto": 2}, "events": [{"a": 1}]}
@@ -80,7 +82,7 @@ class FeedTest(unittest.TestCase):
                 mock.patch.object(sys, "argv", ["feed.py"]):
             self.assertEqual(feed.main(), 0)
         self.assertEqual(json.loads(write.call_args.args[0]), data)
-        push.assert_called_once_with(data, ok=True)
+        push.assert_called_once_with(data)
 
     def test_only_public_repos(self):
         # The job reads GitHub anonymously: a private repo would fail every run.
@@ -173,7 +175,6 @@ class WiringTest(unittest.TestCase):
     def test_no_api_keys_in_the_vendored_code(self):
         # Knight Lab's demo keys are blanked (vendor/README.md); a new version
         # brings them back unless that's redone.
-        import re
         for path in [TIMELINE / "vendor/timelinejs3-3.9.13.js", ROOT / "front-door/timeline-site.yaml"]:
             text = path.read_text()
             self.assertNotRegex(text, r"AIza[0-9A-Za-z_-]{35}", path.name)
