@@ -12,11 +12,13 @@ metadata:
 data:
   index.html: |
     <!doctype html>
-    <!-- timeline.brick.nozdormu.cloud: the brick homelab's history in TimelineJS3
-         (Knight Lab, vendored: no outside requests). Two halves, merged here:
-         timeline-history.yaml (the curated milestones) and feed.json (every merged
-         pull request, a slide per repo per week, refreshed hourly by the
-         timeline-feed job). If the feed is missing, the milestones still show. -->
+    <!-- timeline.brick.nozdormu.cloud: the brick homelab's story in TimelineJS3
+         (Knight Lab, vendored: no outside requests). timeline-history.yaml holds
+         it: chapters, each opened by a slide of its own, and milestones that link
+         what led to them and what they led to. feed.json (every merged pull
+         request, a slide per repo per week, refreshed hourly by the timeline-feed
+         job) counts the pull requests in each chapter, and with ?prs=1 shows them
+         all as slides. If the feed is missing, the story still shows. -->
     <html lang="en">
     <head>
     <meta charset="utf-8">
@@ -91,19 +93,33 @@ data:
       @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
       .tl-feed-note { font: 0.8em var(--mono); color: var(--dim) !important; }
       .tl-menubar-button { background: var(--panel); color: var(--cyan); border-color: var(--edge); }
+      /* The story: chapter cards, and the threads between milestones. */
+      .tl-chapter-story { font-size: 1.25em; line-height: 1.5; }
+      .tl-chapter-stats { font: 0.85em var(--mono); color: var(--magenta) !important; letter-spacing: 0.04em; }
+      .tl-chapter-span { font: 0.8em var(--mono); color: var(--dim) !important; }
+      .tl-thread { margin-top: 1.2em; padding-top: 0.6em; border-top: 1px solid var(--edge);
+                   font: 0.8em/1.7 var(--mono); color: var(--dim) !important; }
+      .tl-thread b { color: var(--text); font-weight: normal; text-transform: uppercase; letter-spacing: 0.06em; }
+      .tl-thread a { text-decoration: none; border-bottom: 1px dotted currentColor; }
+      #prs { position: fixed; right: 10px; top: 8px; z-index: 50; font: 12px var(--mono); color: var(--dim);
+             background: var(--panel); border: 1px solid var(--edge); padding: 3px 10px; cursor: pointer; }
+      #prs:hover, #prs.on { color: var(--cyan); border-color: var(--cyan); }
     </style>
     </head>
     <body>
     <div id="timeline"></div>
     <div id="status"></div>
+    <button id="prs" type="button"></button>
     <canvas id="static"></canvas>
     <script src="js-yaml-5.5.0.min.js"></script>
     <script src="timelinejs3-3.9.13.js"></script>
     <script>
     "use strict";
-    const ERA_COLOURS = ["#ffb300", "#39ff6a", "#5b7799", "#00eaff", "#ff2bd6"];
     const PR_COLOUR = "#5b7799";
+    const CHAPTERS = "Chapters";  // the row the chapter cards sit in
     const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const showPrs = new URLSearchParams(location.search).get("prs") === "1";
 
     // A YAML date comes back from js-yaml as a Date (UTC midnight); a string also works.
     function tlDate(d) {
@@ -111,17 +127,86 @@ data:
       return { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate() };
     }
 
-    // Each milestone gets its row's picture (or its own) and an id that names its
-    // row, which the track's markers are coloured by (rowStyles).
+    const utc = d => { const t = tlDate(d); return Date.UTC(t.year, t.month - 1, t.day); };
+    const fmtDay = d => new Date(utc(d)).toLocaleDateString("en", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
+    const link = (e, prefix = "") => `${prefix}<a href="#event-${e.uid}">${esc(e.headline)}</a>`;
+
+    // The threads under a milestone: what led to it (its "after"), what it led to
+    // (every milestone naming it), and the next milestone in its row.
+    function thread(e, byId, all) {
+      const lines = [];
+      const cause = byId[e.after];
+      if (cause) lines.push(`<b>Because of</b> ← ${link(cause)}`);
+      const effects = all.filter(o => o.after && o.after === e.id);
+      if (effects.length) lines.push(`<b>Led to</b> → ${effects.map(o => link(o)).join(" · ")}`);
+      const next = all.find(o => o.group === e.group && o.i > e.i);
+      if (next && !effects.includes(next)) lines.push(`<b>Next in ${esc(e.group)}</b> → ${link(next)}`);
+      return lines.length ? `<p class="tl-thread">${lines.join("<br>")}</p>` : "";
+    }
+
+    // Each milestone gets its row's picture (or its own), an id that names its row
+    // (the track's markers are coloured by it: rowStyles) and its threads.
     function milestones(history) {
       const rows = history.rows || {};
-      return (history.events || []).map((e, i) => ({
+      const all = (history.events || []).map((e, i) => ({ ...e, i, uid: `m-${slug(e.group)}-${i}` }))
+        .sort((a, b) => utc(a.date) - utc(b.date) || a.i - b.i);
+      const byId = Object.fromEntries(all.filter(e => e.id).map(e => [e.id, e]));
+      return all.map(e => ({
         start_date: tlDate(e.date),
         group: e.group,
-        unique_id: `m-${slug(e.group)}-${i}`,
-        text: { headline: e.headline, text: e.text || "" },
+        unique_id: e.uid,
+        text: { headline: e.headline, text: `<p>${e.text || ""}</p>${thread(e, byId, all)}` },
         media: { url: `art-${e.art || rows[e.group]?.art || "origins"}.svg`, alt: e.headline },
       }));
+    }
+
+    // A pull-request week's merges: one list item each (feed.py).
+    const merges = e => ((e.text?.text || "").match(/<li>/g) || []).length;
+
+    // A card opening each chapter: its story, its span, and what happened in it.
+    function chapterCards(history, pulls) {
+      const chapters = history.chapters || [];
+      const today = new Date();
+      return chapters.map((c, n) => {
+        const from = utc(c.start), to = c.end ? utc(c.end) : today.getTime();
+        const inside = d => { const t = utc(d); return t >= from && t <= to; };
+        const count = (history.events || []).filter(e => inside(e.date)).length;
+        const prs = pulls.filter(p => inside(new Date(Date.UTC(p.start_date.year, p.start_date.month - 1, p.start_date.day))))
+          .reduce((sum, p) => sum + merges(p), 0);
+        const span = `${fmtDay(c.start)} – ${c.end ? fmtDay(c.end) : "today"}`;
+        const stats = [`${count} milestone${count === 1 ? "" : "s"}`];
+        if (pulls.length) stats.push(`${prs} pull request${prs === 1 ? "" : "s"} merged`);
+        return {
+          start_date: tlDate(c.start),
+          display_date: `Chapter ${n + 1} of ${chapters.length}`,
+          group: CHAPTERS,
+          unique_id: `c${n + 1}-${slug(c.headline)}`,
+          text: { headline: c.headline,
+                  text: `<p class="tl-chapter-span">${span}</p><p class="tl-chapter-story">${c.story || ""}</p>`
+                        + `<p class="tl-chapter-stats">${stats.join(" · ")}</p>` },
+          media: { url: `art-${c.art || "title"}.svg`, alt: c.headline },
+        };
+      });
+    }
+
+    // The last slide, today: the story so far, in numbers.
+    function epilogue(history, feed) {
+      const milestones = (history.events || []).length;
+      const prs = Object.values(feed.pull_requests || {}).reduce((a, b) => a + b, 0);
+      const now = new Date();
+      const facts = [`${milestones} milestones in ${(history.chapters || []).length} chapters`];
+      if (prs) facts.push(`${prs} merged pull requests across ${Object.keys(feed.pull_requests).length} public repos`);
+      return {
+        start_date: { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() },
+        display_date: "Today",
+        group: CHAPTERS,
+        unique_id: "c-to-be-continued",
+        text: { headline: "To be continued",
+                text: `<p class="tl-chapter-story">${facts.join("; ")}. The next milestone is whatever ships next;
+                       every merged pull request lands here within the hour.</p>
+                       <p class="tl-thread"><b>Start again</b> → <a href="#event-c1-${slug(history.chapters?.[0]?.headline || "")}">Chapter 1</a></p>` },
+        media: { url: "art-title.svg", alt: "To be continued" },
+      };
     }
 
     function rowStyles(history) {
@@ -130,7 +215,8 @@ data:
         [id^="${prefix}"].tl-timemarker-active .tl-timemarker-content-container { background: ${c}; border-color: ${c}; box-shadow: 0 0 14px ${c}; }
         [id^="${prefix}"] .tl-timemarker-line-left, [id^="${prefix}"] .tl-timemarker-line-right { border-color: ${c}; }`;
       const css = Object.entries(history.rows || {}).map(([group, row]) => rule(`m-${slug(group)}-`, row.colour)).join("")
-        + rule("pr-", PR_COLOUR);
+        + (history.chapters || []).map((c, n) => rule(`c${n + 1}-`, c.colour)).join("")
+        + rule("c-to-be-continued", "#ffffff") + rule("pr-", PR_COLOUR);
       document.head.insertAdjacentHTML("beforeend", `<style>${css}</style>`);
     }
 
@@ -180,13 +266,14 @@ data:
       if (active) { void active.offsetWidth; active.classList.add("tuned"); }
     }
 
+    // The chapters again, as coloured bands along the track.
     function eras(history) {
       const today = new Date();
-      return (history.eras || []).map((e, i) => ({
-        start_date: tlDate(e.start),
-        end_date: tlDate(e.end || today),
-        text: { headline: e.headline },
-        background: { color: ERA_COLOURS[i % ERA_COLOURS.length] },
+      return (history.chapters || []).map(c => ({
+        start_date: tlDate(c.start),
+        end_date: tlDate(c.end || today),
+        text: { headline: c.headline },
+        background: { color: c.colour },
       }));
     }
 
@@ -198,26 +285,30 @@ data:
         const reply = await fetch("feed.json", { cache: "no-cache" });
         if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
         feed = await reply.json();
-        const prs = Object.values(feed.pull_requests || {}).reduce((a, b) => a + b, 0);
-        history.title.text += `<p class="tl-feed-note">${prs} merged pull requests, as of ${new Date(feed.generated).toLocaleString()}.</p>`;
+        history.title.text += `<p class="tl-feed-note">Pull requests as of ${new Date(feed.generated).toLocaleString()}.</p>`;
       } catch (e) {
-        status.textContent = "pull requests unavailable: milestones only";
+        status.textContent = "pull requests unavailable: the story only";
         status.classList.add("bad");
       }
+      history.title.text = `<p class="tl-chapter-story">${history.title.text}</p>`
+        + `<p class="tl-thread"><b>Begin</b> → press the arrow, or pick any moment on the track below.</p>`;
       const pulls = (feed.events || []).map(e => ({ media: { url: "art-pulls.svg", alt: "merged pull requests" }, ...e }));
-      const events = [...milestones(history), ...pulls];
+      const events = [...chapterCards(history, pulls), ...milestones(history), epilogue(history, feed),
+                      ...(showPrs ? pulls : [])];
       const data = { title: { text: history.title, media: { url: "art-title.svg", alt: "BRICK//NET" } },
                      eras: eras(history), events };
       rowStyles(history);
-      // Open on the day homelab-context started (slide 0 is the title).
-      const sorted = events.map(e => e.start_date).map(d => Date.UTC(d.year, d.month - 1, d.day)).sort((a, b) => a - b);
-      const start = sorted.findIndex(t => t >= Date.UTC(2026, 9, 10));
+      const toggle = document.getElementById("prs");
+      toggle.textContent = showPrs ? "every pull request: on" : "every pull request: off";
+      toggle.classList.toggle("on", showPrs);
+      toggle.onclick = () => { location.search = showPrs ? "" : "?prs=1"; };
+      // A story starts at the beginning: the title slide, unless the link names a slide.
       const timeline = new TL.Timeline("timeline", data, {
         script_path: "./",      // nothing else to load: the font and language are built in
         font: null,
         language: "en",
         hash_bookmark: true,
-        start_at_slide: start < 0 ? 0 : start + 1,
+        start_at_slide: 0,
         timenav_height_percentage: 40,
         initial_zoom: 5,
         scale_factor: 1,
@@ -239,28 +330,35 @@ data:
   timeline-history.yaml: |
     # The brick homelab's history, for timeline.brick.nozdormu.cloud (TimelineJS3).
     #
-    # Curated: the milestones, worked out from the git history of the operations-ivy
-    # repos (before 2026-10-10) and the session notes kept since. The page adds the
-    # merged pull requests of the public repos, a slide per repo per week, from
-    # the hourly timeline-feed job (front-door/timeline/feed.py).
+    # Curated: the story, worked out from the git history of the operations-ivy
+    # repos (before 2026-10-10) and the session notes kept since. Told in chapters;
+    # each milestone says why it happened and links what caused it. The merged pull
+    # requests of the public repos, from the hourly timeline-feed job
+    # (front-door/timeline/feed.py), count per chapter and show on request.
     #
     # This repo is public: features only. No addresses, credentials or anything
     # about people. Add a milestone when something ships that changes how the
     # homelab works; the PR feed covers the rest.
     #
-    # date: YYYY-MM-DD. group: one of the rows below. text: HTML is allowed.
-    # art: optional, a picture from art/ (art-<name>.svg); each row has a default.
+    # Chapters: start/end dates (the last has no end: it runs to today), a colour
+    # for its band in the track, its art, and the story that opens it.
+    #
+    # Events:
+    #   date: YYYY-MM-DD   group: one of the rows below   headline, text (HTML allowed)
+    #   id: optional, for linking   after: optional, the id of the milestone that led to it
+    #   art: optional, a picture from art/ (art-<name>.svg); each row has a default
     title:
       headline: brick, from the start
       text: >-
-        How a practice repo became a three-node Raspberry Pi cluster with an
-        arcade cabinet, wall panels and a desk display: the milestones, and every
-        merged pull request.
+        How a practice repo became a three-node Raspberry Pi cluster with an arcade
+        cabinet, wall panels and a desk display. Seven chapters, a crash in the
+        middle, and the threads that tie it together.
 
-    groups: [Origins, Cluster, Delivery, Apps, Cabinet, Displays]
+    groups: [Chapters, Origins, Cluster, Delivery, Apps, Cabinet, Displays]
 
     # Each row's picture (art/art-<name>.svg), and its colour in the track.
     rows:
+      Chapters: {art: title, colour: "#ffffff"}
       Origins: {art: origins, colour: "#ffb300"}
       Cluster: {art: cluster, colour: "#39ff6a"}
       Delivery: {art: delivery, colour: "#00eaff"}
@@ -268,246 +366,489 @@ data:
       Cabinet: {art: cabinet, colour: "#ff3355"}
       Displays: {art: displays, colour: "#cc99ff"}
 
-    eras:
-      - {start: 2023-12-27, end: 2025-03-24, headline: Practice}
-      - {start: 2025-03-25, end: 2025-05-31, headline: The first cluster}
-      - {start: 2025-06-01, end: 2026-09-14, headline: Quiet}
-      - {start: 2026-09-15, end: 2026-10-09, headline: The build-out}
-      - {start: 2026-10-10, headline: homelab-context}  # runs to today
+    chapters:
+      - start: 2023-12-27
+        end: 2025-03-24
+        headline: Practice
+        colour: "#ffb300"
+        art: origins
+        story: >-
+          It starts as a practice repo, project_viper: Python, SQLite and small
+          APIs, then Flask apps on minikube and Kafka experiments. Nothing here runs
+          a homelab yet, but most of what comes later is tried here first.
+      - start: 2025-03-25
+        end: 2025-05-31
+        headline: The first cluster
+        colour: "#39ff6a"
+        art: cluster
+        story: >-
+          Practice turns into a project. A joke importer leaves for a repo of its
+          own, gets a container and a real database, and needs somewhere to run: a
+          Raspberry Pi cluster, with a configuration repo, a runbook and its first
+          metrics.
+      - start: 2025-06-01
+        end: 2026-09-14
+        headline: Quiet
+        colour: "#5b7799"
+        art: origins
+        story: >-
+          Fifteen months with almost nothing in git. When the work picks up again
+          it's on new hardware, and it doesn't slow down.
+      - start: 2026-09-15
+        end: 2026-10-09
+        headline: The build-out
+        colour: "#00eaff"
+        art: delivery
+        story: >-
+          Three weeks on new Raspberry Pi 5s. Monitoring, tracing and sealed
+          secrets; a wardriving uploader; Jenkins and a status board on the
+          cabinet's screen; every web UI at its own name over HTTPS. By the end
+          it's a homelab, not a practice cluster.
+      - start: 2026-10-10
+        end: 2026-10-16
+        headline: Written down
+        colour: "#ff2bd6"
+        art: apps
+        story: >-
+          homelab-context starts: one record of how everything works, read at the
+          start of every working session. The pace changes with it. Within a week
+          there are games on the cabinet, a tracker watch, a wall panel, and every
+          workload deploys from git.
+      - start: 2026-10-17
+        end: 2026-10-26
+        headline: The crash
+        colour: "#ff3355"
+        art: cabinet
+        story: >-
+          The cabinet's HAT dies, and brick9000 was the front door for every name:
+          nothing answers. That afternoon the front door moves onto the cluster,
+          and the rule from then on is that nothing the homelab needs depends on one
+          host. Nine days later the cabinet comes back.
+      - start: 2026-10-27
+        headline: Lights and screens
+        colour: "#cc99ff"
+        art: displays
+        story: >-
+          With the cabinet back, the homelab grows things to touch and look at:
+          button lights anything can signal through, buttons that do things, a desk
+          display, a redesigned board. It also learns to look after itself: a
+          Wi-Fi watchdog, a heat warning that no longer keeps itself up.
 
     events:
       # --- Practice ------------------------------------------------------------
       - date: 2023-12-27
         group: Origins
+        id: viper
         headline: project_viper starts
-        text: A catch-all practice repo for Python, SQLite and small APIs. Most of what came later started here.
+        text: >-
+          A catch-all practice repo for Python, SQLite and small APIs. It has no
+          plan, and it doesn't need one: most of what follows starts as an
+          experiment in here.
       - date: 2024-02-07
         group: Origins
+        id: minikube
+        after: viper
         headline: First steps with Kubernetes
-        text: Practice Flask apps on minikube, in project_viper.
+        text: >-
+          Practice Flask apps on minikube, a one-machine Kubernetes. The idea that
+          apps should run on a cluster, not on a host, starts here.
       - date: 2024-02-26
         group: Origins
+        id: jokes
+        after: viper
         headline: The joke importer
-        text: SQLite middleware and a joke importer script, with tests by March. The seed of chucks-wisdom.
+        text: >-
+          SQLite middleware and a script that imports jokes, with tests by March.
+          A toy, but the first thing with data worth keeping: the seed of
+          chucks-wisdom.
       - date: 2025-02-11
         group: Origins
+        id: kafka-practice
+        after: viper
         headline: Kafka experiments
-        text: Kafka producers and consumers in project_viper, long before Kafka ran on the cluster.
+        text: >-
+          Producers and consumers in project_viper. Kafka won't run on the cluster
+          for another twenty months.
       - date: 2025-03-22
         group: Origins
+        id: tiny-screens
         headline: A host and port printer for tiny Pi screens
-        text: A terminal display for small Raspberry Pi screens, an early sign of the panels to come.
+        text: >-
+          A terminal display for small Raspberry Pi screens. Something to glance
+          at instead of logging in: the first of the homelab's screens.
 
       # --- The first cluster -----------------------------------------------------
       - date: 2025-03-25
         group: Apps
+        id: chucks
+        after: jokes
         headline: chucks-wisdom breaks out
-        text: The joke importer leaves project_viper for its own repo, and is containerised within days.
+        text: >-
+          The joke importer leaves project_viper for its own repo and is in a
+          container within days. Now it needs somewhere to run.
       - date: 2025-04-13
         group: Apps
+        after: chucks
         headline: chucks-wisdom moves to Postgres
-        text: SQLite storage converted to Postgres.
+        text: >-
+          SQLite swapped for Postgres: a real database, and the first stateful
+          workload the cluster will have to look after.
       - date: 2025-05-03
         group: Cluster
+        id: k8s-config
+        after: minikube
         headline: brick-k8s-config starts
-        text: The cluster's configuration repo. A week later app manifests move to each app's own repo, the split every app still follows.
+        text: >-
+          The cluster gets a configuration repo. A week later each app's manifests
+          move to the app's own repo, the split every app still follows.
       - date: 2025-05-12
         group: Cluster
+        after: k8s-config
         headline: Recovery steps written down
-        text: The first cluster runbook, in brick-k8s-config's README.
+        text: >-
+          The first runbook, in brick-k8s-config's README: how to bring the
+          cluster back. Writing things down becomes a habit later; this is its
+          first sign.
       - date: 2025-05-18
         group: Cluster
+        id: first-metrics
+        after: k8s-config
         headline: First monitoring, first metrics
-        text: A first kube-prometheus-stack, and the joke importer instrumented for metrics.
+        text: >-
+          A first kube-prometheus-stack, and the joke importer instrumented. For
+          the first time the cluster can say how it's doing.
       - date: 2025-05-24
         group: Displays
+        id: lcars-fork
+        after: tiny-screens
         headline: An LCARS interface on a Raspberry Pi
-        text: A fork of the open-source rpi_lcars made to run. Seventeen months later it became the bedroom wall panel.
+        text: >-
+          A fork of the open-source rpi_lcars, made to run. It sits for seventeen
+          months before it becomes the wall panel.
 
       # --- The build-out ---------------------------------------------------------
       - date: 2026-09-16
         group: Cluster
+        id: pi5
         headline: Redeployed on Raspberry Pi 5s
-        text: chucks-wisdom hardened and its manifests cleaned up for the new Pi 5 nodes.
+        text: >-
+          The quiet ends on new hardware. chucks-wisdom is hardened and its
+          manifests cleaned up for the Pi 5 nodes, and the next three weeks build
+          everything else around it.
       - date: 2026-09-19
         group: Cluster
+        after: pi5
         headline: The Kubernetes dashboard on the LAN
-        text: Served through Traefik instead of an SSH tunnel.
+        text: Served through Traefik instead of an SSH tunnel. The first web UI with an address of its own.
       - date: 2026-09-20
         group: Apps
+        after: chucks
         headline: The reader's cyberpunk console
-        text: chucks-wisdom's reader serves a console page backed by a live JSON API.
+        text: >-
+          chucks-wisdom's reader serves a neon console page from a live JSON API:
+          the first of the homelab's neon screens.
       - date: 2026-09-21
         group: Cluster
+        id: prometheus
+        after: first-metrics
         headline: Prometheus and Grafana for real
-        text: kube-prometheus-stack installed; dashboards register themselves from labelled ConfigMaps.
+        text: >-
+          kube-prometheus-stack installed properly this time, and dashboards
+          register themselves from labelled ConfigMaps: add a service, get its
+          dashboard.
       - date: 2026-09-22
         group: Cluster
+        id: tracing
+        after: prometheus
         headline: Tracing, and sealed secrets
-        text: Tempo and the OpenTelemetry Collector for traces; credentials committed only as SealedSecrets.
+        text: >-
+          Tempo and the OpenTelemetry Collector for traces. Credentials go into
+          git only as SealedSecrets, so the configuration repos can be public.
       - date: 2026-09-24
         group: Apps
+        id: wigle
         headline: wigle-sync
         art: radar
-        text: Hourly uploads of the wardriving Pi's Kismet logs to WiGLE, with Loki and the Pushgateway joining the monitoring the same week.
+        text: >-
+          A wardriving Pi logs Wi-Fi with Kismet; every hour the logs go up to
+          WiGLE. Loki and the Pushgateway join the monitoring the same week, so a
+          job that runs and exits still reports how it went.
       - date: 2026-09-26
         group: Delivery
+        id: jenkins
         headline: Jenkins and the status board
-        text: brick-cicd-config starts with Jenkins and brick-status, the board on brick9000's screen.
+        text: >-
+          brick-cicd-config starts with Jenkins and brick-status, the board on
+          brick9000's screen. Builds now happen somewhere you can watch.
       - date: 2026-09-28
         group: Delivery
+        after: jenkins
         headline: Tests before every push
-        text: Pull requests open with their test results.
+        text: Pull requests open with their test results. Nothing merges on faith.
       - date: 2026-10-02
         group: Cluster
+        id: names
         headline: Every web UI at its own name over HTTPS
-        text: <code>&lt;app&gt;.brick.nozdormu.cloud</code> for everything, with real certificates; the <code>.local</code> names start to retire.
+        text: >-
+          <code>&lt;app&gt;.brick.nozdormu.cloud</code> for everything, with real
+          certificates, all through Caddy on brick9000. The <code>.local</code>
+          names start to retire. The front door now lives on one host; that
+          matters on October 17.
       - date: 2026-10-07
         group: Apps
+        after: wigle
         headline: The wardriving Pi bootstraps from git
         art: radar
-        text: brick69 rebuilt from the wigle-sync repo alone.
+        text: brick69 rebuilt from the wigle-sync repo alone. If it dies, git brings it back.
       - date: 2026-10-08
         group: Delivery
+        id: jenkins-k8s
+        after: jenkins
         headline: Jenkins moves onto the cluster
-        text: Same jobs and webhooks, now a cluster workload.
+        text: The same jobs and webhooks, now a cluster workload instead of a host's.
 
-      # --- homelab-context ---------------------------------------------------------
+      # --- Written down ------------------------------------------------------------
       - date: 2026-10-10
         group: Delivery
+        id: context
         headline: homelab-context starts
-        text: One shared, versioned record of how the homelab works, read at the start of every working session. Most of what follows is written down there.
+        text: >-
+          One shared, versioned record of how the homelab works, read at the start
+          of every working session and updated at the end. Most of what follows is
+          written down there, and this timeline is built from it.
       - date: 2026-10-10
         group: Apps
+        id: radar
+        after: wigle
         headline: The wardrive radar; two replicas everywhere
         art: radar
-        text: wigle-console gets its radar, and the web apps run two replicas on different nodes.
+        text: >-
+          wigle-console gets its radar, and the web apps run two replicas on
+          different nodes, so losing a node doesn't take an app down.
       - date: 2026-10-11
         group: Cabinet
+        id: games
+        after: jenkins
         headline: Games on the cabinet
-        text: RetroArch opens over the board when the controller turns on.
+        text: >-
+          RetroArch opens over the board when the controller turns on. The status
+          board's screen becomes an arcade cabinet.
       - date: 2026-10-12
         group: Apps
         headline: overwatch
-        text: A Bluetooth tracker watch becomes an app of its own.
+        after: wigle
+        text: >-
+          A Bluetooth tracker watch grows out of the wardriving work into an app of
+          its own, then learns to spot Wi-Fi deauthentication floods.
       - date: 2026-10-13
         group: Cluster
+        id: k8s-default
         headline: Kubernetes by default
-        text: If it can run on the cluster, it does; host-only work needs a reason. Systemd units get metrics.
+        text: >-
+          A rule: if it can run on the cluster, it does; host-only work needs a
+          reason. The systemd units left on hosts get metrics.
       - date: 2026-10-15
         group: Displays
+        id: panel
+        after: lcars-fork
         headline: The LCARS panel and Home Assistant
-        text: brick1982 leaves the cluster to become a touchscreen LCARS panel; Home Assistant arrives with the thermostat.
+        text: >-
+          Seventeen months after the fork, brick1982 leaves the cluster to become a
+          touchscreen LCARS wall panel. Home Assistant arrives with the thermostat.
       - date: 2026-10-16
         group: Delivery
+        id: argo
+        after: jenkins-k8s
         headline: GitOps with Argo CD
-        text: Every Kubernetes workload deploys from git.
+        text: >-
+          Every Kubernetes workload deploys from git, and Argo CD puts back
+          anything that drifts. Git is now what the cluster runs.
       - date: 2026-10-16
         group: Cabinet
+        after: games
         headline: Five more consoles
-        text: Sega CD, 32X, PSP, Dreamcast and Neo Geo on the cabinet.
+        text: Sega CD, 32X, PSP, Dreamcast and Neo Geo on the cabinet, each measured first to check it keeps up.
+
+      # --- The crash ---------------------------------------------------------------
+      - date: 2026-10-17
+        group: Cabinet
+        id: crash
+        after: names
+        headline: brick9000 dies
+        text: >-
+          The cabinet's HAT fails. brick9000 is the status board, the arcade and
+          the front door for every name, so every web UI goes dark with it.
       - date: 2026-10-17
         group: Cluster
-        headline: The front door moves onto the cluster
+        id: front-door
+        after: crash
         art: cluster
-        text: brick9000's hardware died; Caddy and kube-vip took over every name, and nothing the homelab needs depends on one host again.
+        headline: The front door moves onto the cluster
+        text: >-
+          The same afternoon: Caddy and its certificates run on the cluster, and
+          kube-vip holds the front door's address on whichever worker is up. A
+          failover test moves it in about a second. Nothing the homelab needs
+          depends on one host again.
       - date: 2026-10-20
         group: Cluster
+        id: kube-vip
+        after: front-door
         headline: kube-vip is the only load balancer
-        text: k3s's ServiceLB off; hosts called by name everywhere.
+        text: >-
+          k3s's built-in ServiceLB kept wiping the front door's status and taking
+          every name down with it. It's switched off; kube-vip is the one load
+          balancer, and hosts are called by name everywhere.
       - date: 2026-10-21
         group: Displays
+        after: panel
         headline: The panel grows
-        text: Calendar, house average, forecast and alerts on the LCARS panel.
+        text: Calendar, house average, forecast and alerts on the LCARS panel, while the cabinet is away.
       - date: 2026-10-22
         group: Apps
+        after: radar
         headline: brick69's status LEDs
         art: radar
-        text: The wardriving Pi shows what it sees on its own LEDs.
+        text: The wardriving Pi shows what it sees on its own LEDs, with no screen to look at.
       - date: 2026-10-24
         group: Delivery
+        id: observe
+        after: tracing
         headline: brick-observe 0.1.0
-        text: One library gives every service its logs, metrics and traces from a single call.
+        text: >-
+          Logs, metrics and traces had been wired up service by service. Now one
+          library gives every service all three from a single call.
       - date: 2026-10-25
         group: Cluster
+        after: kafka-practice
         headline: Kafka on the cluster
-        text: The Strimzi operator and a KRaft cluster, as Argo CD apps.
+        text: >-
+          Twenty months after the experiments in project_viper: the Strimzi
+          operator and a KRaft cluster, as Argo CD apps.
       - date: 2026-10-26
         group: Cabinet
+        id: back
+        after: crash
         headline: The cabinet is back
-        text: brick9000 returns on a new Picade X HAT.
+        text: >-
+          A new Picade X HAT, and the cabinet rewired from scratch. That night the
+          button lights are plugged in for the first time.
+
+      # --- Lights and screens -------------------------------------------------------
       - date: 2026-10-28
         group: Delivery
+        id: one-line
+        after: argo
         headline: One line per release
-        text: Image tags single-sourced with Kustomize.
+        text: Image tags single-sourced with Kustomize. A release is one line in git.
       - date: 2026-10-31
         group: Delivery
+        after: one-line
         headline: Builds start from a push
-        text: Every pushed branch builds its images; release branches build the tags they name.
+        text: Every pushed branch builds its images; release branches build the tags they name. No more starting builds by hand.
       - date: 2026-10-31
         group: Apps
+        after: radar
         headline: The wardrive atlas
         art: radar
-        text: The radar replaced by a replay of each drive.
+        text: The radar gives way to a replay of each drive, on a map.
       - date: 2026-11-01
         group: Cluster
+        after: names
         headline: The tile wall, and a new log pipeline
-        text: brick.nozdormu.cloud becomes a tile per service; Alloy replaces Promtail.
+        text: brick.nozdormu.cloud becomes a wall of tiles, one per service. Alloy replaces Promtail for the logs.
       - date: 2026-11-01
         group: Cabinet
+        id: plasma
+        after: back
         headline: The plasma API
-        text: One service owns the cabinet's button lights; anything can signal through it.
+        text: >-
+          The button lights from the night the cabinet came back get one service
+          that owns them. Anything in the homelab can now signal through the
+          cabinet's buttons.
       - date: 2026-11-03
         group: Cabinet
+        id: buttons
+        after: plasma
         headline: The cabinet's buttons do things
-        text: Sleep and wake on the side, check everything from the front.
+        text: Lit, and now useful. Sleep and wake on the side, check everything from the front.
       - date: 2026-11-03
         group: Delivery
+        after: jenkins-k8s
         headline: Jenkins builds itself
         text: The Jenkins image is built and checked by its own pipeline.
       - date: 2026-11-03
         group: Displays
-        headline: The Presto
+        id: presto
+        after: tiny-screens
         art: presto
-        text: A Pimoroni Presto desk display with a neon home screen and four apps.
+        headline: The Presto
+        text: >-
+          A Pimoroni Presto desk display with a neon home screen and four apps. The
+          tiny-screen idea from March 2025, done properly.
       - date: 2026-11-04
         group: Displays
-        headline: presto-photos on the cluster
+        after: presto
         art: presto
+        headline: presto-photos on the cluster
         text: The Presto's photos come from a cluster service; days later it updates itself over Wi-Fi.
       - date: 2026-11-05
         group: Delivery
         headline: Maintenance windows
-        text: Planned work silences what it would set off.
+        text: >-
+          Working on a device used to set off its alerts. Planned work now
+          silences what it would set off.
       - date: 2026-11-05
         group: Displays
+        after: panel
         headline: The lamp joins Home Assistant
         text: And gets a button on the cabinet the next day.
       - date: 2026-11-07
         group: Cluster
         headline: Images shared between nodes
-        text: k3s's embedded registry (Spegel) on every node; old images pruned nightly.
+        text: >-
+          k3s's embedded registry (Spegel) on every node: a node can start a pod
+          from an image another node already has. Old images are pruned nightly.
       - date: 2026-11-07
         group: Cabinet
+        id: watchdog
+        after: back
         headline: A Wi-Fi watchdog
-        text: brick9000 re-associates by itself when broadcasts stop arriving.
+        text: >-
+          brick9000 kept dropping off the network: its Wi-Fi had lost the group key,
+          so no broadcasts arrived. Now a watchdog re-activates the link after ten
+          silent minutes, by itself.
       - date: 2026-11-08
         group: Cabinet
-        headline: The board's redesign
+        id: redesign
+        after: back
         art: cabinet
-        text: Neon on near-black, VT323, a grid and a raster, TV static between screens.
+        headline: The board's redesign
+        text: >-
+          The status board takes on the console's neon look: near-black, VT323, a
+          grid and a raster, TV static between screens.
       - date: 2026-11-08
         group: Delivery
+        after: argo
         headline: Power-down, and change markers
-        text: A job to take a node out of service and back; every build marked on the Grafana dashboards.
+        text: A job to take a node out of service and back; every build marked on the Grafana dashboards, so a change and its effect line up.
       - date: 2026-11-09
         group: Cabinet
+        after: redesign
         headline: The cabinet stops cooking itself
-        text: A warning that kept the board hot fixed; the CRT's job card shows the branch; RetroArch in the board's look; button 5 enlarges the CRT.
+        text: >-
+          A Dreamcast session raised the heat warning, and the warning's own
+          animated badge kept the board busy enough to stay hot: it held itself
+          up. A static badge and a gap between raising and clearing broke the
+          loop. The same day: the branch on the CRT's job card, RetroArch in the
+          board's look, and button 5 to enlarge the CRT.
       - date: 2026-11-09
         group: Cluster
+        after: context
         headline: This timeline
-        text: timeline.brick.nozdormu.cloud, fed hourly by every merged pull request.
+        text: >-
+          timeline.brick.nozdormu.cloud: the story so far, drawn from a month of
+          homelab-context's notes and two years of git history, and fed every hour
+          by each merged pull request.
   art-apps.svg: |
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img"><title>The apps</title><defs><filter id="g" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#0e1630" stroke-width="1"/></pattern></defs><rect width="480" height="320" rx="10" fill="#04050a"/><rect width="480" height="320" rx="10" fill="url(#grid)"/>
     <g filter="url(#g)"><rect x="40" y="50" width="190" height="120" rx="8" fill="#0a0e19" stroke="#ff2bd6" stroke-width="2"/><rect x="250" y="50" width="190" height="120" rx="8" fill="#0a0e19" stroke="#00eaff" stroke-width="2"/><rect x="145" y="185" width="190" height="105" rx="8" fill="#0a0e19" stroke="#39ff6a" stroke-width="2"/></g>

@@ -112,16 +112,38 @@ class HistoryTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertTrue((TIMELINE / f"art/art-{name}.svg").exists())
 
-    def test_eras_run_in_order_without_overlapping(self):
-        eras = self.history["eras"]
-        for a, b in zip(eras, eras[1:]):
+    def test_chapters_run_in_order_and_each_tells_its_story(self):
+        chapters = self.history["chapters"]
+        for a, b in zip(chapters, chapters[1:]):
             self.assertLess(a["end"], b["start"])
-        self.assertNotIn("end", eras[-1])  # the current era runs to today
+        self.assertNotIn("end", chapters[-1])  # the current chapter runs to today
+        for c in chapters:
+            with self.subTest(c["headline"]):
+                self.assertTrue(c["story"])
+                self.assertRegex(c["colour"], r"^#[0-9a-f]{6}$")
+                self.assertTrue((TIMELINE / f"art/art-{c['art']}.svg").exists())
 
-    def test_it_starts_with_homelab_context_inside_its_era(self):
+    def test_every_milestone_falls_in_a_chapter(self):
+        chapters = self.history["chapters"]
+        for e in self.history["events"]:
+            with self.subTest(e["headline"]):
+                self.assertTrue(any(c["start"] <= e["date"] <= c.get("end", date.max) for c in chapters))
+
+    def test_threads_link_real_earlier_milestones(self):
+        events = self.history["events"]
+        with_id = [e for e in events if "id" in e]
+        by_id = {e["id"]: e for e in with_id}
+        self.assertEqual(len(by_id), len(with_id))  # no duplicate ids
+        for e in events:
+            if "after" in e:
+                with self.subTest(e["headline"]):
+                    self.assertIn(e["after"], by_id)
+                    self.assertLessEqual(by_id[e["after"]]["date"], e["date"])
+
+    def test_it_starts_with_homelab_context_opening_its_chapter(self):
         starts = [e["date"] for e in self.history["events"] if e["headline"] == "homelab-context starts"]
         self.assertEqual(starts, [date(2026, 10, 10)])
-        self.assertEqual(self.history["eras"][-1]["start"], date(2026, 10, 10))
+        self.assertIn(date(2026, 10, 10), [c["start"] for c in self.history["chapters"]])
 
     def test_no_addresses_or_private_repos(self):
         text = (TIMELINE / "timeline-history.yaml").read_text()

@@ -1,9 +1,11 @@
 <!doctype html>
-<!-- timeline.brick.nozdormu.cloud: the brick homelab's history in TimelineJS3
-     (Knight Lab, vendored: no outside requests). Two halves, merged here:
-     timeline-history.yaml (the curated milestones) and feed.json (every merged
-     pull request, a slide per repo per week, refreshed hourly by the
-     timeline-feed job). If the feed is missing, the milestones still show. -->
+<!-- timeline.brick.nozdormu.cloud: the brick homelab's story in TimelineJS3
+     (Knight Lab, vendored: no outside requests). timeline-history.yaml holds
+     it: chapters, each opened by a slide of its own, and milestones that link
+     what led to them and what they led to. feed.json (every merged pull
+     request, a slide per repo per week, refreshed hourly by the timeline-feed
+     job) counts the pull requests in each chapter, and with ?prs=1 shows them
+     all as slides. If the feed is missing, the story still shows. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -78,19 +80,33 @@
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
   .tl-feed-note { font: 0.8em var(--mono); color: var(--dim) !important; }
   .tl-menubar-button { background: var(--panel); color: var(--cyan); border-color: var(--edge); }
+  /* The story: chapter cards, and the threads between milestones. */
+  .tl-chapter-story { font-size: 1.25em; line-height: 1.5; }
+  .tl-chapter-stats { font: 0.85em var(--mono); color: var(--magenta) !important; letter-spacing: 0.04em; }
+  .tl-chapter-span { font: 0.8em var(--mono); color: var(--dim) !important; }
+  .tl-thread { margin-top: 1.2em; padding-top: 0.6em; border-top: 1px solid var(--edge);
+               font: 0.8em/1.7 var(--mono); color: var(--dim) !important; }
+  .tl-thread b { color: var(--text); font-weight: normal; text-transform: uppercase; letter-spacing: 0.06em; }
+  .tl-thread a { text-decoration: none; border-bottom: 1px dotted currentColor; }
+  #prs { position: fixed; right: 10px; top: 8px; z-index: 50; font: 12px var(--mono); color: var(--dim);
+         background: var(--panel); border: 1px solid var(--edge); padding: 3px 10px; cursor: pointer; }
+  #prs:hover, #prs.on { color: var(--cyan); border-color: var(--cyan); }
 </style>
 </head>
 <body>
 <div id="timeline"></div>
 <div id="status"></div>
+<button id="prs" type="button"></button>
 <canvas id="static"></canvas>
 <script src="js-yaml-5.5.0.min.js"></script>
 <script src="timelinejs3-3.9.13.js"></script>
 <script>
 "use strict";
-const ERA_COLOURS = ["#ffb300", "#39ff6a", "#5b7799", "#00eaff", "#ff2bd6"];
 const PR_COLOUR = "#5b7799";
+const CHAPTERS = "Chapters";  // the row the chapter cards sit in
 const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const showPrs = new URLSearchParams(location.search).get("prs") === "1";
 
 // A YAML date comes back from js-yaml as a Date (UTC midnight); a string also works.
 function tlDate(d) {
@@ -98,17 +114,86 @@ function tlDate(d) {
   return { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate() };
 }
 
-// Each milestone gets its row's picture (or its own) and an id that names its
-// row, which the track's markers are coloured by (rowStyles).
+const utc = d => { const t = tlDate(d); return Date.UTC(t.year, t.month - 1, t.day); };
+const fmtDay = d => new Date(utc(d)).toLocaleDateString("en", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
+const link = (e, prefix = "") => `${prefix}<a href="#event-${e.uid}">${esc(e.headline)}</a>`;
+
+// The threads under a milestone: what led to it (its "after"), what it led to
+// (every milestone naming it), and the next milestone in its row.
+function thread(e, byId, all) {
+  const lines = [];
+  const cause = byId[e.after];
+  if (cause) lines.push(`<b>Because of</b> ← ${link(cause)}`);
+  const effects = all.filter(o => o.after && o.after === e.id);
+  if (effects.length) lines.push(`<b>Led to</b> → ${effects.map(o => link(o)).join(" · ")}`);
+  const next = all.find(o => o.group === e.group && o.i > e.i);
+  if (next && !effects.includes(next)) lines.push(`<b>Next in ${esc(e.group)}</b> → ${link(next)}`);
+  return lines.length ? `<p class="tl-thread">${lines.join("<br>")}</p>` : "";
+}
+
+// Each milestone gets its row's picture (or its own), an id that names its row
+// (the track's markers are coloured by it: rowStyles) and its threads.
 function milestones(history) {
   const rows = history.rows || {};
-  return (history.events || []).map((e, i) => ({
+  const all = (history.events || []).map((e, i) => ({ ...e, i, uid: `m-${slug(e.group)}-${i}` }))
+    .sort((a, b) => utc(a.date) - utc(b.date) || a.i - b.i);
+  const byId = Object.fromEntries(all.filter(e => e.id).map(e => [e.id, e]));
+  return all.map(e => ({
     start_date: tlDate(e.date),
     group: e.group,
-    unique_id: `m-${slug(e.group)}-${i}`,
-    text: { headline: e.headline, text: e.text || "" },
+    unique_id: e.uid,
+    text: { headline: e.headline, text: `<p>${e.text || ""}</p>${thread(e, byId, all)}` },
     media: { url: `art-${e.art || rows[e.group]?.art || "origins"}.svg`, alt: e.headline },
   }));
+}
+
+// A pull-request week's merges: one list item each (feed.py).
+const merges = e => ((e.text?.text || "").match(/<li>/g) || []).length;
+
+// A card opening each chapter: its story, its span, and what happened in it.
+function chapterCards(history, pulls) {
+  const chapters = history.chapters || [];
+  const today = new Date();
+  return chapters.map((c, n) => {
+    const from = utc(c.start), to = c.end ? utc(c.end) : today.getTime();
+    const inside = d => { const t = utc(d); return t >= from && t <= to; };
+    const count = (history.events || []).filter(e => inside(e.date)).length;
+    const prs = pulls.filter(p => inside(new Date(Date.UTC(p.start_date.year, p.start_date.month - 1, p.start_date.day))))
+      .reduce((sum, p) => sum + merges(p), 0);
+    const span = `${fmtDay(c.start)} – ${c.end ? fmtDay(c.end) : "today"}`;
+    const stats = [`${count} milestone${count === 1 ? "" : "s"}`];
+    if (pulls.length) stats.push(`${prs} pull request${prs === 1 ? "" : "s"} merged`);
+    return {
+      start_date: tlDate(c.start),
+      display_date: `Chapter ${n + 1} of ${chapters.length}`,
+      group: CHAPTERS,
+      unique_id: `c${n + 1}-${slug(c.headline)}`,
+      text: { headline: c.headline,
+              text: `<p class="tl-chapter-span">${span}</p><p class="tl-chapter-story">${c.story || ""}</p>`
+                    + `<p class="tl-chapter-stats">${stats.join(" · ")}</p>` },
+      media: { url: `art-${c.art || "title"}.svg`, alt: c.headline },
+    };
+  });
+}
+
+// The last slide, today: the story so far, in numbers.
+function epilogue(history, feed) {
+  const milestones = (history.events || []).length;
+  const prs = Object.values(feed.pull_requests || {}).reduce((a, b) => a + b, 0);
+  const now = new Date();
+  const facts = [`${milestones} milestones in ${(history.chapters || []).length} chapters`];
+  if (prs) facts.push(`${prs} merged pull requests across ${Object.keys(feed.pull_requests).length} public repos`);
+  return {
+    start_date: { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() },
+    display_date: "Today",
+    group: CHAPTERS,
+    unique_id: "c-to-be-continued",
+    text: { headline: "To be continued",
+            text: `<p class="tl-chapter-story">${facts.join("; ")}. The next milestone is whatever ships next;
+                   every merged pull request lands here within the hour.</p>
+                   <p class="tl-thread"><b>Start again</b> → <a href="#event-c1-${slug(history.chapters?.[0]?.headline || "")}">Chapter 1</a></p>` },
+    media: { url: "art-title.svg", alt: "To be continued" },
+  };
 }
 
 function rowStyles(history) {
@@ -117,7 +202,8 @@ function rowStyles(history) {
     [id^="${prefix}"].tl-timemarker-active .tl-timemarker-content-container { background: ${c}; border-color: ${c}; box-shadow: 0 0 14px ${c}; }
     [id^="${prefix}"] .tl-timemarker-line-left, [id^="${prefix}"] .tl-timemarker-line-right { border-color: ${c}; }`;
   const css = Object.entries(history.rows || {}).map(([group, row]) => rule(`m-${slug(group)}-`, row.colour)).join("")
-    + rule("pr-", PR_COLOUR);
+    + (history.chapters || []).map((c, n) => rule(`c${n + 1}-`, c.colour)).join("")
+    + rule("c-to-be-continued", "#ffffff") + rule("pr-", PR_COLOUR);
   document.head.insertAdjacentHTML("beforeend", `<style>${css}</style>`);
 }
 
@@ -167,13 +253,14 @@ function glitchHeadline() {
   if (active) { void active.offsetWidth; active.classList.add("tuned"); }
 }
 
+// The chapters again, as coloured bands along the track.
 function eras(history) {
   const today = new Date();
-  return (history.eras || []).map((e, i) => ({
-    start_date: tlDate(e.start),
-    end_date: tlDate(e.end || today),
-    text: { headline: e.headline },
-    background: { color: ERA_COLOURS[i % ERA_COLOURS.length] },
+  return (history.chapters || []).map(c => ({
+    start_date: tlDate(c.start),
+    end_date: tlDate(c.end || today),
+    text: { headline: c.headline },
+    background: { color: c.colour },
   }));
 }
 
@@ -185,26 +272,30 @@ async function load() {
     const reply = await fetch("feed.json", { cache: "no-cache" });
     if (!reply.ok) throw new Error(`HTTP ${reply.status}`);
     feed = await reply.json();
-    const prs = Object.values(feed.pull_requests || {}).reduce((a, b) => a + b, 0);
-    history.title.text += `<p class="tl-feed-note">${prs} merged pull requests, as of ${new Date(feed.generated).toLocaleString()}.</p>`;
+    history.title.text += `<p class="tl-feed-note">Pull requests as of ${new Date(feed.generated).toLocaleString()}.</p>`;
   } catch (e) {
-    status.textContent = "pull requests unavailable: milestones only";
+    status.textContent = "pull requests unavailable: the story only";
     status.classList.add("bad");
   }
+  history.title.text = `<p class="tl-chapter-story">${history.title.text}</p>`
+    + `<p class="tl-thread"><b>Begin</b> → press the arrow, or pick any moment on the track below.</p>`;
   const pulls = (feed.events || []).map(e => ({ media: { url: "art-pulls.svg", alt: "merged pull requests" }, ...e }));
-  const events = [...milestones(history), ...pulls];
+  const events = [...chapterCards(history, pulls), ...milestones(history), epilogue(history, feed),
+                  ...(showPrs ? pulls : [])];
   const data = { title: { text: history.title, media: { url: "art-title.svg", alt: "BRICK//NET" } },
                  eras: eras(history), events };
   rowStyles(history);
-  // Open on the day homelab-context started (slide 0 is the title).
-  const sorted = events.map(e => e.start_date).map(d => Date.UTC(d.year, d.month - 1, d.day)).sort((a, b) => a - b);
-  const start = sorted.findIndex(t => t >= Date.UTC(2026, 9, 10));
+  const toggle = document.getElementById("prs");
+  toggle.textContent = showPrs ? "every pull request: on" : "every pull request: off";
+  toggle.classList.toggle("on", showPrs);
+  toggle.onclick = () => { location.search = showPrs ? "" : "?prs=1"; };
+  // A story starts at the beginning: the title slide, unless the link names a slide.
   const timeline = new TL.Timeline("timeline", data, {
     script_path: "./",      // nothing else to load: the font and language are built in
     font: null,
     language: "en",
     hash_bookmark: true,
-    start_at_slide: start < 0 ? 0 : start + 1,
+    start_at_slide: 0,
     timenav_height_percentage: 40,
     initial_zoom: 5,
     scale_factor: 1,
