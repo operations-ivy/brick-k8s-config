@@ -124,6 +124,17 @@ class WiringTest(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_no_yaml_line_breaks_in_text_data(self):
+        # A raw U+0085 in a data value is turned into a space by the API server's
+        # YAML parser: the live ConfigMap never matches git (Argo CD OutOfSync).
+        for doc in yaml.safe_load_all((ROOT / "front-door/timeline-site.yaml").read_text()):
+            for key, value in doc.get("data", {}).items():
+                with self.subTest(key):
+                    self.assertFalse(any(c in value for c in ("\x85", "\u2028", "\u2029")))
+        vendor = next(d for d in yaml.safe_load_all((ROOT / "front-door/timeline-site.yaml").read_text())
+                      if d["metadata"]["name"] == "timeline-vendor")
+        self.assertIn("js-yaml-5.5.0.min.js", vendor["binaryData"])
+
     def test_caddy_serves_the_three_configmaps(self):
         docs = [d for d in yaml.safe_load_all((ROOT / "front-door/caddy.yaml").read_text()) if d]
         caddyfile = next(d for d in docs if d["kind"] == "ConfigMap")["data"]["Caddyfile"]
