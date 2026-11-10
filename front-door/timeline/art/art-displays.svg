@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img"><title>The LCARS wall panel</title><defs><filter id="g" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#0e1630" stroke-width="1"/></pattern></defs><rect width="480" height="320" rx="10" fill="#04050a"/><rect width="480" height="320" rx="10" fill="url(#grid)"/>
+<g filter="url(#g)"><path d="M50 60 h110 a26 26 0 0 1 0 0 v26 h-70 v148 h70 v26 h-110 a26 26 0 0 1 -26 -26 v-148 a26 26 0 0 1 26 -26z" fill="#ff9966"/></g>
+<rect x="170" y="60" width="160" height="26" rx="13" fill="#cc99ff"/><rect x="340" y="60" width="96" height="26" rx="13" fill="#9999ff"/>
+<rect x="170" y="234" width="110" height="26" rx="13" fill="#ffcc66"/><rect x="290" y="234" width="146" height="26" rx="13" fill="#ff9966"/>
+<g font-family="monospace" font-size="15" fill="#04050a"><text x="180" y="78">STARDATE</text><text x="300" y="252">HOME</text></g>
+<g font-family="monospace" fill="#ffcc66"><text x="110" y="140" font-size="44">71°</text><text x="110" y="168" font-size="14" fill="#9999ff">INSIDE</text></g>
+<g font-family="monospace" font-size="14"><text x="250" y="130" fill="#cc99ff">HEAT  ON</text><text x="250" y="156" fill="#ff9966">LAMP  ON</text><text x="250" y="182" fill="#9999ff">FCST  RAIN</text><text x="250" y="208" fill="#ffcc66">ALERTS  0</text></g>
+<rect x="232" y="118" width="8" height="14" fill="#cc99ff"><animate attributeName="opacity" values="1;0;1" dur="1.4s" repeatCount="indefinite"/></rect>
+<g opacity=".18"><rect y="0" width="480" height="2" fill="#000"><animate attributeName="y" values="0;320" dur="4s" repeatCount="indefinite"/></rect></g><rect width="480" height="320" rx="10" fill="none" stroke="#1a2442" stroke-width="2"/></svg>

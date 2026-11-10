@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 320" role="img"><title>The pipeline: push, test, build, deploy</title><defs><filter id="g" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#0e1630" stroke-width="1"/></pattern></defs><rect width="480" height="320" rx="10" fill="#04050a"/><rect width="480" height="320" rx="10" fill="url(#grid)"/>
+<g font-family="monospace" font-size="15" text-anchor="middle">
+<g transform="translate(70 160)"><circle r="34" fill="#0a0e19" stroke="#ff2bd6" stroke-width="3" filter="url(#g)"/><text y="5" fill="#ff2bd6">push</text></g>
+<g transform="translate(180 160)"><circle r="34" fill="#0a0e19" stroke="#ffb300" stroke-width="3" filter="url(#g)"/><text y="5" fill="#ffb300">test</text></g>
+<g transform="translate(290 160)"><circle r="34" fill="#0a0e19" stroke="#00eaff" stroke-width="3" filter="url(#g)"/><text y="5" fill="#00eaff">build</text></g>
+<g transform="translate(400 160)"><circle r="34" fill="#0a0e19" stroke="#39ff6a" stroke-width="3" filter="url(#g)"/><text y="5" fill="#39ff6a">deploy</text></g></g>
+<g stroke="#5b7799" stroke-width="3"><path d="M104 160H146M214 160H256M324 160H366"/></g>
+<circle r="7" fill="#c9f3ff" filter="url(#g)"><animateMotion dur="3s" repeatCount="indefinite" path="M70 160H400"/></circle>
+<g font-family="monospace" font-size="14" fill="#5b7799"><text x="70" y="240">jenkins // argo cd // kustomize</text></g>
+<path d="M60 100 q60 -40 120 0 t120 0 t120 0" fill="none" stroke="#1a2442" stroke-width="2"/>
+<g opacity=".18"><rect y="0" width="480" height="2" fill="#000"><animate attributeName="y" values="0;320" dur="4s" repeatCount="indefinite"/></rect></g><rect width="480" height="320" rx="10" fill="none" stroke="#1a2442" stroke-width="2"/></svg>

@@ -2,7 +2,8 @@
 """Write front-door/timeline-site.yaml, the ConfigMaps behind
 timeline.brick.nozdormu.cloud, from the files in front-door/timeline/:
 
-- timeline-site: the page and the curated milestones (timeline-history.yaml);
+- timeline-site: the page, the curated milestones (timeline-history.yaml) and
+  the slides' neon art (art/*.svg);
 - timeline-vendor: TimelineJS3 and js-yaml, vendored with their licences;
 - timeline-feed-script: feed.py, run hourly by the timeline-feed CronJob.
 
@@ -28,7 +29,8 @@ NAMESPACE = "front-door"
 
 # ConfigMap name -> the files in it (paths under SRC; served under their own names).
 CONFIGMAPS = {
-    "timeline-site": ["index.html", "timeline-history.yaml"],
+    "timeline-site": ["index.html", "timeline-history.yaml",
+                      *sorted(f"art/{p.name}" for p in (SRC / "art").glob("*.svg"))],
     "timeline-vendor": ["vendor/timelinejs3-3.9.13.js", "vendor/timelinejs3-3.9.13.js.LICENSE.txt",
                         "vendor/timelinejs3-3.9.13.dark.css", "vendor/tl-icons.woff2", "vendor/tl-icons.woff",
                         "vendor/LICENSE-timelinejs3", "vendor/js-yaml-5.5.0.min.js", "vendor/LICENSE-js-yaml"],

@@ -10,6 +10,7 @@
 # homelab works; the PR feed covers the rest.
 #
 # date: YYYY-MM-DD. group: one of the rows below. text: HTML is allowed.
+# art: optional, a picture from art/ (art-<name>.svg); each row has a default.
 title:
   headline: brick, from the start
   text: >-
@@ -18,6 +19,15 @@ title:
     merged pull request.
 
 groups: [Origins, Cluster, Delivery, Apps, Cabinet, Displays]
+
+# Each row's picture (art/art-<name>.svg), and its colour in the track.
+rows:
+  Origins: {art: origins, colour: "#ffb300"}
+  Cluster: {art: cluster, colour: "#39ff6a"}
+  Delivery: {art: delivery, colour: "#00eaff"}
+  Apps: {art: apps, colour: "#ff2bd6"}
+  Cabinet: {art: cabinet, colour: "#ff3355"}
+  Displays: {art: displays, colour: "#cc99ff"}
 
 eras:
   - {start: 2023-12-27, end: 2025-03-24, headline: Practice}
@@ -99,6 +109,7 @@ events:
   - date: 2026-09-24
     group: Apps
     headline: wigle-sync
+    art: radar
     text: Hourly uploads of the wardriving Pi's Kismet logs to WiGLE, with Loki and the Pushgateway joining the monitoring the same week.
   - date: 2026-09-26
     group: Delivery
@@ -115,6 +126,7 @@ events:
   - date: 2026-10-07
     group: Apps
     headline: The wardriving Pi bootstraps from git
+    art: radar
     text: brick69 rebuilt from the wigle-sync repo alone.
   - date: 2026-10-08
     group: Delivery
@@ -129,6 +141,7 @@ events:
   - date: 2026-10-10
     group: Apps
     headline: The wardrive radar; two replicas everywhere
+    art: radar
     text: wigle-console gets its radar, and the web apps run two replicas on different nodes.
   - date: 2026-10-11
     group: Cabinet
@@ -157,6 +170,7 @@ events:
   - date: 2026-10-17
     group: Cluster
     headline: The front door moves onto the cluster
+    art: cluster
     text: brick9000's hardware died; Caddy and kube-vip took over every name, and nothing the homelab needs depends on one host again.
   - date: 2026-10-20
     group: Cluster
@@ -169,6 +183,7 @@ events:
   - date: 2026-10-22
     group: Apps
     headline: brick69's status LEDs
+    art: radar
     text: The wardriving Pi shows what it sees on its own LEDs.
   - date: 2026-10-24
     group: Delivery
@@ -193,6 +208,7 @@ events:
   - date: 2026-10-31
     group: Apps
     headline: The wardrive atlas
+    art: radar
     text: The radar replaced by a replay of each drive.
   - date: 2026-11-01
     group: Cluster
@@ -213,10 +229,12 @@ events:
   - date: 2026-11-03
     group: Displays
     headline: The Presto
+    art: presto
     text: A Pimoroni Presto desk display with a neon home screen and four apps.
   - date: 2026-11-04
     group: Displays
     headline: presto-photos on the cluster
+    art: presto
     text: The Presto's photos come from a cluster service; days later it updates itself over Wi-Fi.
   - date: 2026-11-05
     group: Delivery
@@ -237,6 +255,7 @@ events:
   - date: 2026-11-08
     group: Cabinet
     headline: The board's redesign
+    art: cabinet
     text: Neon on near-black, VT323, a grid and a raster, TV static between screens.
   - date: 2026-11-08
     group: Delivery

@@ -100,6 +100,16 @@ class HistoryTest(unittest.TestCase):
                 self.assertTrue(e["headline"])
                 self.assertIn(e["group"], groups)
 
+    def test_every_row_and_milestone_has_art_that_exists(self):
+        rows = self.history["rows"]
+        self.assertEqual(set(rows), set(self.history["groups"]))
+        names = {row["art"] for row in rows.values()}
+        names |= {e["art"] for e in self.history["events"] if "art" in e}
+        names |= {"title", "pulls"}  # the title slide's, and every pull-request week's
+        for name in names:
+            with self.subTest(name):
+                self.assertTrue((TIMELINE / f"art/art-{name}.svg").exists())
+
     def test_eras_run_in_order_without_overlapping(self):
         eras = self.history["eras"]
         for a, b in zip(eras, eras[1:]):

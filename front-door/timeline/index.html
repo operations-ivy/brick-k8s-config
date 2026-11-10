@@ -58,6 +58,24 @@
   .tl-timeera .tl-timeera-background { opacity: 0.25; }
   .tl-slidenav-next .tl-slidenav-title, .tl-slidenav-previous .tl-slidenav-title { color: var(--cyan); }
   .tl-slidenav-next .tl-slidenav-description, .tl-slidenav-previous .tl-slidenav-description { color: var(--dim); }
+  /* Pizazz: the board's TV static between slides, a glitch as each headline
+     tunes in, glowing art. All of it stops for prefers-reduced-motion. */
+  #static { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 40; pointer-events: none;
+            display: none; image-rendering: pixelated; opacity: 0.85; }
+  .tl-slide.tuned h2.tl-headline, .tl-slide.tuned h2.tl-headline-title { animation: tune-in 0.6s steps(1) 1; }
+  @keyframes tune-in {
+    0% { transform: translateX(0.12em) skewX(-12deg); opacity: 0.3; }
+    20% { transform: translateX(-0.08em); opacity: 1; }
+    40% { transform: translateX(0.04em) skewX(6deg); }
+    60%, 100% { transform: none; }
+  }
+  .tl-slide .tl-media img { border-radius: 10px; box-shadow: 0 0 24px rgba(0, 234, 255, 0.25), 0 0 2px #00eaff; }
+  .tl-slide-titleslide .tl-media img { box-shadow: 0 0 40px rgba(255, 43, 214, 0.45), 0 0 2px #ff2bd6; }
+  .tl-slide-titleslide h2.tl-headline-title { font-size: 3em; animation: glitch 3s steps(1) infinite; }
+  @keyframes glitch { 0%, 90% { transform: none; } 92% { transform: translateX(0.06em) skewX(-8deg); }
+                      94% { transform: translateX(-0.05em); } 96% { transform: skewX(5deg); } }
+  .tl-timeera .tl-timeera-background { opacity: 0.4; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
   .tl-feed-note { font: 0.8em var(--mono); color: var(--dim) !important; }
   .tl-menubar-button { background: var(--panel); color: var(--cyan); border-color: var(--edge); }
 </style>
@@ -65,11 +83,14 @@
 <body>
 <div id="timeline"></div>
 <div id="status"></div>
+<canvas id="static"></canvas>
 <script src="js-yaml-5.5.0.min.js"></script>
 <script src="timelinejs3-3.9.13.js"></script>
 <script>
 "use strict";
-const ERA_COLOURS = ["#ff2bd6", "#5b7799", "#1a2442", "#00eaff", "#39ff6a"];
+const ERA_COLOURS = ["#ffb300", "#39ff6a", "#5b7799", "#00eaff", "#ff2bd6"];
+const PR_COLOUR = "#5b7799";
+const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
 // A YAML date comes back from js-yaml as a Date (UTC midnight); a string also works.
 function tlDate(d) {
@@ -77,13 +98,73 @@ function tlDate(d) {
   return { year: day.getUTCFullYear(), month: day.getUTCMonth() + 1, day: day.getUTCDate() };
 }
 
+// Each milestone gets its row's picture (or its own) and an id that names its
+// row, which the track's markers are coloured by (rowStyles).
 function milestones(history) {
+  const rows = history.rows || {};
   return (history.events || []).map((e, i) => ({
     start_date: tlDate(e.date),
     group: e.group,
-    unique_id: `m-${i}`,
+    unique_id: `m-${slug(e.group)}-${i}`,
     text: { headline: e.headline, text: e.text || "" },
+    media: { url: `art-${e.art || rows[e.group]?.art || "origins"}.svg`, alt: e.headline },
   }));
+}
+
+function rowStyles(history) {
+  const rule = (prefix, c) => `
+    [id^="${prefix}"] .tl-timemarker-content-container { border-left: 4px solid ${c}; }
+    [id^="${prefix}"].tl-timemarker-active .tl-timemarker-content-container { background: ${c}; border-color: ${c}; box-shadow: 0 0 14px ${c}; }
+    [id^="${prefix}"] .tl-timemarker-line-left, [id^="${prefix}"] .tl-timemarker-line-right { border-color: ${c}; }`;
+  const css = Object.entries(history.rows || {}).map(([group, row]) => rule(`m-${slug(group)}-`, row.colour)).join("")
+    + rule("pr-", PR_COLOUR);
+  document.head.insertAdjacentHTML("beforeend", `<style>${css}</style>`);
+}
+
+// The rows' names in their colours, once TimelineJS has drawn them.
+function colourRowNames(history) {
+  for (const el of document.querySelectorAll(".tl-timegroup-message")) {
+    const row = (history.rows || {})[el.textContent.trim()];
+    if (row) el.style.color = row.colour;
+  }
+}
+
+// The board's static (brick-status, static/index.html): six frames from all noise
+// to a last few bars, 55 ms each.
+const STATIC_FRAMES = [1.0, 0.8, 0.55, 0.35, 0.18, 0.07];
+const STATIC_COLOURS = ["#00eaff", "#1a2442", "#0a0e19", "#ff2bd6", "#5b7799"];
+function drawStatic(canvas, cover) {
+  const w = canvas.width = Math.max(1, Math.round(canvas.clientWidth / 4));
+  const h = canvas.height = Math.max(1, Math.round(canvas.clientHeight / 4));
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  if (cover >= 1) { ctx.fillStyle = "rgba(4,5,10,0.6)"; ctx.fillRect(0, 0, w, h); }
+  const k = w / 240;
+  for (let i = 0; i < Math.round(160 * cover * k); i++) {
+    ctx.fillStyle = STATIC_COLOURS[Math.floor(Math.random() * STATIC_COLOURS.length)];
+    ctx.fillRect(Math.round((Math.random() * 250 - 30) * k), Math.floor(Math.random() * h),
+                 Math.round((15 + Math.random() * 125) * k), 1 + Math.floor(Math.random() * 2));
+  }
+}
+let tuning = false;
+function tuneIn() {
+  if (tuning || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const canvas = document.getElementById("static");
+  tuning = true;
+  canvas.style.display = "block";
+  let frame = 0;
+  const step = () => {
+    if (frame < STATIC_FRAMES.length) { drawStatic(canvas, STATIC_FRAMES[frame++]); setTimeout(step, 55); }
+    else { canvas.style.display = "none"; tuning = false; }
+  };
+  step();
+}
+function glitchHeadline() {
+  for (const el of document.querySelectorAll(".tl-slide.tuned")) el.classList.remove("tuned");
+  // TimelineJS marks no slide active: the one on screen is the one nearest the left edge.
+  const active = [...document.querySelectorAll(".tl-slide")]
+    .map(el => [el, Math.abs(el.getBoundingClientRect().left)]).sort((a, b) => a[1] - b[1])[0]?.[0];
+  if (active) { void active.offsetWidth; active.classList.add("tuned"); }
 }
 
 function eras(history) {
@@ -110,12 +191,15 @@ async function load() {
     status.textContent = "pull requests unavailable: milestones only";
     status.classList.add("bad");
   }
-  const events = [...milestones(history), ...(feed.events || [])];
-  const data = { title: { text: history.title }, eras: eras(history), events };
+  const pulls = (feed.events || []).map(e => ({ media: { url: "art-pulls.svg", alt: "merged pull requests" }, ...e }));
+  const events = [...milestones(history), ...pulls];
+  const data = { title: { text: history.title, media: { url: "art-title.svg", alt: "BRICK//NET" } },
+                 eras: eras(history), events };
+  rowStyles(history);
   // Open on the day homelab-context started (slide 0 is the title).
   const sorted = events.map(e => e.start_date).map(d => Date.UTC(d.year, d.month - 1, d.day)).sort((a, b) => a - b);
   const start = sorted.findIndex(t => t >= Date.UTC(2026, 9, 10));
-  new TL.Timeline("timeline", data, {
+  const timeline = new TL.Timeline("timeline", data, {
     script_path: "./",      // nothing else to load: the font and language are built in
     font: null,
     language: "en",
@@ -127,6 +211,9 @@ async function load() {
     marker_height_min: 24,
     optimal_tick_width: 90,
   });
+  timeline.on("loaded", () => setTimeout(() => colourRowNames(history), 0));
+  timeline.on("change", () => { tuneIn(); setTimeout(glitchHeadline, 120); });
+  setTimeout(() => colourRowNames(history), 1500);
 }
 load().catch(e => {
   const status = document.getElementById("status");
