@@ -7,8 +7,13 @@ retention policy on this plan, so neither can express "keep the last two
 versions" on its own. This does it explicitly, across:
 
   - Docker Hub          tags on each repo
-  - k3s nodes           containerd's image store (via `k3s crictl`, over SSH)
-  - this machine        local docker images, including unprefixed compose tags
+  - k3s nodes           containerd's image store (`k3s crictl`, over SSH)
+  - this machine        local docker images, including unprefixed compose tags;
+                        or another host's, over SSH, when PRUNE_DOCKER_SSH names
+                        it (Jenkins: brick9000)
+
+Over SSH it runs brick-cicd-config's jenkins-gate (jenkins/gate), the only
+thing Jenkins' key may run on a host, so the nodes need it installed.
 
 Versions are ordered by semver (1.0.10 > 1.0.9); non-version tags (latest,
 native-test...) are ignored. An image a node is still running can't be
@@ -46,6 +51,7 @@ REPOS = ["wigle-sync", "wigle-console", "joke-reader", "joke-importer", "overwat
 # Every k3s node, by name (the router's DNS; validate --cluster checks the list).
 NODES = ["brick420", "brick2000", "brick666"]
 SSH_USER = "zaphod"
+DOCKER_SSH = os.environ.get("PRUNE_DOCKER_SSH", "")
 HUB = "https://hub.docker.com/v2"
 VERSION = re.compile(r"^\d+(\.\d+)*$")
 DEV_PREFIX = "dev-"  # a branch's trial images (brick-cicd-config's build-branches)
@@ -114,9 +120,14 @@ def hub_token() -> str | None:
     return base64.b64decode(entry).decode().split(":", 1)[1] if entry else None
 
 
+def gate(host: str, *words: str) -> list[str]:
+    """The ssh command for one jenkins-gate request on host."""
+    return ["ssh", "-o", "BatchMode=yes", f"{SSH_USER}@{host}", " ".join(["jenkins-gate", *words])]
+
+
 # ---------------------------------------------------------------- k3s nodes
 def node_images(node: str) -> dict[str, set[str]]:
-    out = run(["ssh", "-o", "BatchMode=yes", f"{SSH_USER}@{node}", "sudo -n k3s crictl images -o json"])
+    out = run(gate(node, "crictl-images"))
     if out.returncode:
         raise RuntimeError(out.stderr.strip())
     found: dict[str, set[str]] = {}
@@ -131,13 +142,14 @@ def node_images(node: str) -> dict[str, set[str]]:
 
 def node_rmi(node: str, repo: str, tag: str) -> str | None:
     ref = f"docker.io/{NAMESPACE}/{repo}:{tag}"
-    out = run(["ssh", "-o", "BatchMode=yes", f"{SSH_USER}@{node}", f"sudo -n k3s crictl rmi {ref}"])
+    out = run(gate(node, "crictl-rmi", ref))
     return None if out.returncode == 0 else out.stderr.strip()
 
 
 # ---------------------------------------------------------------- local
 def local_images() -> dict[str, set[str]]:
-    out = run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"])
+    out = run(gate(DOCKER_SSH, "docker-images") if DOCKER_SSH
+              else ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"])
     found: dict[str, set[str]] = {}
     for ref in out.stdout.split():
         name, _, tag = ref.rpartition(":")
@@ -226,12 +238,13 @@ def main() -> int:
                 else:
                     print(f"  {verb} {repo}:{tag}")
 
-    print("\n== local docker")
+    print(f"\n== docker on {DOCKER_SSH or 'this machine'}")
     for repo, refs in local_images().items():
         for ref in sorted(refs):
             tag = ref.rpartition(":")[2]
             if VERSION.match(tag) and tag not in newest[repo][: args.keep]:
-                if args.apply and run(["docker", "rmi", ref]).returncode:
+                rmi = gate(DOCKER_SSH, "docker-rmi", ref) if DOCKER_SSH else ["docker", "rmi", ref]
+                if args.apply and run(rmi).returncode:
                     problems += 1
                     print(f"  kept {ref} (in use)")
                     continue

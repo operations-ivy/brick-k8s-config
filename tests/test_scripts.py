@@ -40,6 +40,22 @@ class PruneTests(unittest.TestCase):
         tags = {"0.1.5", "0.1.4", "0.1.3", "0.1.2", "latest", "native-test"}
         self.assertEqual(prune.stale(tags, 2, newest), ["0.1.2", "0.1.3"])
 
+    def test_remote_calls_go_through_jenkins_gate(self):
+        done = mock.Mock(returncode=0, stdout=json.dumps({"images": []}))
+        with mock.patch.object(prune, "run", return_value=done) as run:
+            prune.node_images("brick666")
+            prune.node_rmi("brick666", "wigle-sync", "0.1.2")
+        self.assertEqual([c.args[0][-2:] for c in run.call_args_list],
+                         [["zaphod@brick666", "jenkins-gate crictl-images"],
+                          ["zaphod@brick666", "jenkins-gate crictl-rmi docker.io/whitepatrick/wigle-sync:0.1.2"]])
+
+    def test_another_hosts_docker_through_jenkins_gate(self):
+        done = mock.Mock(returncode=0, stdout="whitepatrick/overwatch:0.8.1\npostgres:15\n")
+        with (mock.patch.object(prune, "DOCKER_SSH", "brick9000"),
+              mock.patch.object(prune, "run", return_value=done) as run):
+            self.assertEqual(prune.local_images(), {"overwatch": {"whitepatrick/overwatch:0.8.1"}})
+        self.assertEqual(run.call_args.args[0][-2:], ["zaphod@brick9000", "jenkins-gate docker-images"])
+
     def test_node_images_keep_only_our_repos(self):
         out = {"images": [{"repoTags": ["docker.io/whitepatrick/wigle-sync:0.1.7"]},
                           {"repoTags": ["docker.io/library/postgres:15"]},
