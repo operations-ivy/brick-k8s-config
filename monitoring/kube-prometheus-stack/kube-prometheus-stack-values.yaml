@@ -151,7 +151,7 @@ prometheus:
     replicas: 1
     # Hosts outside the cluster (brick-cicd-config README, "Metrics"):
     # brick9000's node-exporter and Caddy, brick-status through the proxy (it
-    # listens on localhost there), and brick1982's node-exporter and LCARS panel. The
+    # listens on localhost there), brick1982's node-exporter and LCARS panel, and the Presto. The
     # `instance` is the host's name, as node_uname_info's nodename. Targets
     # are host names, which the router's DNS resolves from each host's DHCP
     # lease, so a host that moves to a new address needs no change here. While
@@ -198,6 +198,15 @@ prometheus:
         static_configs:
           - targets: ["brick1982:8767"]
             labels: {instance: brick1982}
+      # The Presto desk display's room sensor (operations-ivy/presto#8):
+      # presto_room_* from its BME280 and LTR-559. A microcontroller on Wi-Fi,
+      # so a gentler interval and a longer timeout than the hosts.
+      - job_name: presto
+        scrape_interval: 60s
+        scrape_timeout: 10s
+        static_configs:
+          - targets: ["presto:8767"]
+            labels: {instance: presto}
     # brick69 goes wardriving, out of reach for hours: a Prometheus agent on it
     # keeps scraping and remote-writes the backlog once it's home (wigle-sync's
     # pi/setup-metrics.sh), through prometheus.brick.nozdormu.cloud. The
