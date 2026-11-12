@@ -243,8 +243,8 @@ def main() -> int:
         for ref in sorted(refs):
             tag = ref.rpartition(":")[2]
             if VERSION.match(tag) and tag not in newest[repo][: args.keep]:
-                rmi = gate(DOCKER_SSH, "docker-rmi", ref) if DOCKER_SSH else ["docker", "rmi", ref]
-                if args.apply and run(rmi).returncode:
+                if args.apply and run(gate(DOCKER_SSH, "docker-rmi", ref) if DOCKER_SSH
+                                      else ["docker", "rmi", ref]).returncode:
                     problems += 1
                     print(f"  kept {ref} (in use)")
                     continue
