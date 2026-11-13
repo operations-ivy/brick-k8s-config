@@ -501,6 +501,28 @@ the config uses `maxUsedSpace`. Creating the `brick2000` context also
 auto-registers a `brick2000` builder that uses Docker 20.10's built-in BuildKit
 v0.8; use `brick2000-arm64` instead.
 
+## Movies: 480p copies for the Retroid (media/)
+
+Movies live on brick2000's USB drive in `/extra/movies/library` (any folder
+layout). The `movies-480p` CronJob (namespace `media`) makes a 480p
+H.264/AAC MP4 of each one in `/extra/movies/480p`, at the same relative path,
+for the Retroid Pocket 2+'s 640x480 screen: about a quarter of the size, and
+the same picture there.
+
+- **When:** every 30 minutes it converts whatever is new, one file at a time.
+  A file changed in the last 10 minutes (still being copied in) waits.
+- **Gentle:** two of brick2000's four cores, `nice 19`, and the `media-batch`
+  PriorityClass (below every other pod, never preempts). About 1.2-1.7x real
+  time per movie.
+- **Safe:** a copy is written to a dotted `.part` file and renamed when done;
+  originals are never changed. A file ffmpeg can't read gets a
+  `<name>.mp4.failed` marker and is skipped; delete the marker to retry.
+  Picture subtitles are dropped, text ones kept. No network (default-deny).
+- **The script** is `media/convert-480p.sh`; `media/movies-script.yaml` is
+  generated from it with `scripts/media-configmap` (`tests/test_media.py`
+  checks they match). Logs: `kubectl -n media logs job/<latest>` or Loki,
+  `{namespace="media"}`.
+
 ## Image retention: current + previous only
 
 No compliance requirements, so only the two newest versions of each app image
