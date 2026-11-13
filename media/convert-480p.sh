@@ -12,6 +12,7 @@
 # - Text subtitles are kept; if the subtitles can't be converted (picture
 #   subtitles, such as a Blu-ray's), the copy is made without them.
 # - Originals are never changed or deleted.
+# - One run at a time (a lock file in $DST), however the run was started.
 set -u
 SRC=${SRC:-/movies/library}
 DST=${DST:-/movies/480p}
@@ -19,6 +20,14 @@ SETTLE=${SETTLE:-600}
 THREADS=${THREADS:-2}
 
 mkdir -p "$SRC" "$DST"
+# One run at a time, even a Job started by hand beside the CronJob's own
+# (concurrencyPolicy only counts the CronJob's Jobs): two runs would write the
+# same .part file. Both pods are on brick2000, so a local flock covers it.
+exec 9>"$DST/.convert.lock"
+if ! flock -n 9; then
+    echo "another run is converting; nothing to do"
+    exit 0
+fi
 converted=0 failed=0 waiting=0 present=0
 
 encode() {  # encode <input> <output> [subtitle options...]
