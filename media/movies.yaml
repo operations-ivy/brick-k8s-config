@@ -1,0 +1,118 @@
+# Movies for the Retroid Pocket 2+ (640x480 screen): every video in brick2000's
+# /extra/movies/library gets a 480p H.264/AAC copy in /extra/movies/480p, at a
+# quarter of the size and the same look on that screen. The originals stay
+# where they are and are never changed. The script is
+# media/movies-script.yaml (generated from media/convert-480p.sh).
+#
+# A Job every 30 minutes converts whatever is new, one file at a time, on two
+# of brick2000's four cores, at the cluster's lowest priority (and nice 19), so
+# the databases and volumes on brick2000 always come first. One run at a time:
+# a long backlog just keeps the same Job busy until it's done.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: media
+  labels:
+    name: media
+---
+# Below every other pod (the default is 0), and it never pushes one out.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: media-batch
+value: -100
+preemptionPolicy: Never
+globalDefault: false
+description: "Batch media conversion: runs only on capacity nothing else wants."
+---
+# It reads and writes local files only: no network at all.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: movies-480p
+  namespace: media
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A failed file is marked and skipped by the script, so a pod failure is
+      # something else (the drive gone, out of memory): wait for the next run.
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: movies-480p
+        spec:
+          restartPolicy: Never
+          priorityClassName: media-batch
+          # /extra is brick2000's USB drive.
+          nodeSelector:
+            kubernetes.io/hostname: brick2000
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            # /extra is exFAT, owned by uid 1000 (zaphod) through its mount
+            # options: only that uid can write there.
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: convert
+              # linuxserver's ffmpeg 9.0.2 (2026-10-23), pinned by digest.
+              image: docker.io/linuxserver/ffmpeg:9.0.2-cli-ls87@sha256:6547359fac23a2747e606d380e10267b2923a38f68485d9cacefd039e74d3aa8
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/convert-480p.sh"]
+              env:
+                - name: SRC
+                  value: /movies/library
+                - name: DST
+                  value: /movies/480p
+                - name: THREADS
+                  value: "2"
+              volumeMounts:
+                - name: movies
+                  mountPath: /movies
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "2"
+                  # Decoding a 4K HEVC original peaks well under this.
+                  memory: 2Gi
+          volumes:
+            - name: movies
+              hostPath:
+                path: /extra/movies
+                type: DirectoryOrCreate
+            - name: scripts
+              configMap:
+                name: movies-script
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi
