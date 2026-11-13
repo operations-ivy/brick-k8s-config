@@ -18,9 +18,18 @@ data:
 """
 
 
+def indent(script: str) -> str:
+    """Four spaces before each non-blank line: the ConfigMap's block scalar."""
+    return "".join(f"    {line}" if line.strip() else line for line in script.splitlines(keepends=True))
+
+
 def render(script: str) -> str:
-    return HEADER + "".join("    " + line if line.strip() else line for line in script.splitlines(keepends=True))
+    return HEADER + indent(script)
+
+
+def main() -> None:
+    (MEDIA / "movies-script.yaml").write_text(render((MEDIA / "convert-480p.sh").read_text()))
 
 
 if __name__ == "__main__":
-    (MEDIA / "movies-script.yaml").write_text(render((MEDIA / "convert-480p.sh").read_text()))
+    main()

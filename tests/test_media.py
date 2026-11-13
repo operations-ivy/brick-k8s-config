@@ -21,7 +21,8 @@ class MediaTest(unittest.TestCase):
                          "run scripts/media-configmap")
 
     def test_script_parses(self):
-        subprocess.run(["bash", "-n", str(MEDIA / "convert-480p.sh")], check=True)
+        result = subprocess.run(["bash", "-n", str(MEDIA / "convert-480p.sh")], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_cronjob_is_gentle_and_pinned(self):
         by_kind = {d["kind"]: d for d in docs(MEDIA / "movies.yaml")}
@@ -35,7 +36,8 @@ class MediaTest(unittest.TestCase):
         self.assertEqual(container["resources"]["limits"]["cpu"], "2")
         self.assertIn("@sha256:", container["image"])
         self.assertEqual(pod["nodeSelector"], {"kubernetes.io/hostname": "brick2000"})
-        self.assertEqual(pod["volumes"][0]["hostPath"]["path"], "/extra/movies")
+        [movies] = [v for v in pod["volumes"] if "hostPath" in v]
+        self.assertEqual(movies["hostPath"]["path"], "/extra/movies")
 
     def test_deployed_by_cluster_manifests(self):
         app = yaml.safe_load((ROOT / "argocd/apps/cluster-manifests.yaml").read_text())
