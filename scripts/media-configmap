@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+"""Write media/movies-script.yaml, the ConfigMap that carries media/convert-480p.sh
+to the movies-480p CronJob. Run after editing the script; tests/test_media.py
+fails until the two match."""
+from pathlib import Path
+
+MEDIA = Path(__file__).resolve().parent.parent / "media"
+HEADER = """\
+# Generated from media/convert-480p.sh by scripts/media-configmap: edit the
+# script, then run that (tests/test_media.py fails until they match).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: movies-script
+  namespace: media
+data:
+  convert-480p.sh: |
+"""
+
+
+def indent(script: str) -> str:
+    """Four spaces before each non-blank line: the ConfigMap's block scalar."""
+    return "".join(f"    {line}" if line.strip() else line for line in script.splitlines(keepends=True))
+
+
+def render(script: str) -> str:
+    return HEADER + indent(script)
+
+
+def main() -> None:
+    (MEDIA / "movies-script.yaml").write_text(render((MEDIA / "convert-480p.sh").read_text()))
+
+
+if __name__ == "__main__":
+    main()
