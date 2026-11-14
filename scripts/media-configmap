@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Write media/movies-script.yaml, the ConfigMap that carries media/convert-480p.sh
-to the movies-480p CronJob. Run after editing the script; tests/test_media.py
-fails until the two match."""
+"""Write media/movies-script.yaml, the ConfigMap that carries media/'s scripts
+(convert-480p.sh for the CronJob, convert-server.py and convert-worker.sh for
+the workers). Run after editing one; tests/test_media.py fails until they match."""
 from pathlib import Path
 
 MEDIA = Path(__file__).resolve().parent.parent / "media"
 HEADER = """\
-# Generated from media/convert-480p.sh by scripts/media-configmap: edit the
-# script, then run that (tests/test_media.py fails until they match).
+# Generated from media/'s scripts by scripts/media-configmap: edit a script,
+# then run that (tests/test_media.py fails until they match).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: movies-script
   namespace: media
 data:
-  convert-480p.sh: |
 """
+SCRIPTS = ("convert-480p.sh", "convert-server.py", "convert-worker.sh")
 
 
 def indent(script: str) -> str:
@@ -23,12 +23,13 @@ def indent(script: str) -> str:
     return "".join(f"    {line}" if line.strip() else line for line in script.splitlines(keepends=True))
 
 
-def render(script: str) -> str:
-    return HEADER + indent(script)
+def render(scripts: dict[str, str]) -> str:
+    return HEADER + "".join(f"  {name}: |\n{indent(text)}" for name, text in scripts.items())
 
 
 def main() -> None:
-    (MEDIA / "movies-script.yaml").write_text(render((MEDIA / "convert-480p.sh").read_text()))
+    scripts = {name: (MEDIA / name).read_text() for name in SCRIPTS}
+    (MEDIA / "movies-script.yaml").write_text(render(scripts))
 
 
 if __name__ == "__main__":

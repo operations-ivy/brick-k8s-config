@@ -58,6 +58,9 @@ while IFS= read -r -d '' in; do
     out="$DST/${rel%.*}.mp4"
     if [ -e "$out" ]; then present=$((present + 1)); continue; fi
     [ -e "$out.failed" ] && continue
+    # Claimed by a worker on another node (convert-server.py), within 6 hours.
+    claim="$DST/.claims/$(printf '%s' "$rel" | sha1sum | cut -c1-40)"
+    [ -n "$(find "$claim" -mmin -360 2>/dev/null)" ] && continue
     if [ $(($(date +%s) - $(stat -c %Y "$in"))) -lt "$SETTLE" ]; then
         waiting=$((waiting + 1))
         continue
