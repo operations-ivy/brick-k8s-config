@@ -1,0 +1,26 @@
+# The game catalog (games.brick.nozdormu.cloud): the page and the nightly scan of
+# brick2000's ROMs. From operations-ivy/brick-games' k8s_config/ on main.
+#
+# Automated (#42): a merge to main is a deploy, a hand-made change is put
+# back, and an object deleted from git is deleted here (the data volume is
+# protected by its own Prune=false,Delete=false).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: brick-games
+  namespace: argocd
+spec:
+  project: apps
+  source:
+    repoURL: https://github.com/operations-ivy/brick-games.git
+    targetRevision: main
+    path: k8s_config
+    # Rendered with Kustomize, detected from k8s_config/kustomization.yaml.
+    # No `kustomize: {}` here (root would diff forever) and not directory mode.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: games
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

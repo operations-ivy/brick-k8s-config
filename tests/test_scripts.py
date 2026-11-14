@@ -15,6 +15,8 @@ import yaml
 from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
+# The cluster's own config repos, which aren't apps (brick-games is).
+CONFIG_REPOS = {"brick-k8s-config", "brick-k8s-secrets", "brick-cicd-config"}
 
 
 def load(name: str, filename: str):
@@ -293,9 +295,10 @@ class TrialBranchTests(unittest.TestCase):
                 spec = doc["spec"]
                 for source in [spec["source"]] if "source" in spec else spec.get("sources", []):
                     repo = source["repoURL"].rsplit("/", 1)[-1].removesuffix(".git")
-                    if source["repoURL"].startswith(trial.GIT + "operations-ivy/") and not repo.startswith("brick-"):
+                    if source["repoURL"].startswith(trial.GIT + "operations-ivy/") and repo not in CONFIG_REPOS:
                         apps.add(repo)
         self.assertIn("presto", apps)
+        self.assertIn("brick-games", apps)
         self.assertEqual(apps - set(trial.NO_IMAGES), set(trial.IMAGES))
 
     def test_a_helm_release_moves_its_values_not_its_chart(self):

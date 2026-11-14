@@ -256,6 +256,27 @@ data:
         <rect x="83" y="78" width="2" height="30" fill="#ff2a6d" opacity=".9"/>
       </symbol>
 
+      <symbol id="m-games" viewBox="0 0 240 114">
+        <rect width="240" height="114" fill="#04050a"/>
+        <rect x="10" y="8" width="70" height="9" rx="1" fill="#00eaff"/>
+        <rect x="86" y="11" width="34" height="3" fill="#5b7799"/>
+        <rect x="10" y="22" width="150" height="9" rx="2" fill="#0a0e19" stroke="#1a2442" stroke-width=".8"/>
+        <rect x="166" y="22" width="30" height="9" rx="2" fill="#0a0e19" stroke="#1a2442" stroke-width=".8"/>
+        <rect x="200" y="22" width="30" height="9" rx="2" fill="#0a0e19" stroke="#1a2442" stroke-width=".8"/>
+        <rect x="10" y="35" width="18" height="6" rx="1" fill="#00eaff"/><rect x="31" y="35" width="26" height="6" rx="1" fill="#0a0e19" stroke="#1a2442" stroke-width=".6"/>
+        <rect x="60" y="35" width="22" height="6" rx="1" fill="#0a0e19" stroke="#1a2442" stroke-width=".6"/><rect x="85" y="35" width="30" height="6" rx="1" fill="#0a0e19" stroke="#1a2442" stroke-width=".6"/>
+        <g stroke="#1a2442" stroke-width=".8">
+          <rect x="10" y="46" width="34" height="46" rx="2" fill="#2a1240"/><rect x="48" y="46" width="34" height="46" rx="2" fill="#0d2e3e"/>
+          <rect x="86" y="46" width="34" height="46" rx="2" fill="#3a1830"/><rect x="124" y="46" width="34" height="46" rx="2" fill="#13321d"/>
+          <rect x="162" y="46" width="34" height="46" rx="2" fill="#33260a"/><rect x="200" y="46" width="30" height="46" rx="2" fill="#0e1630"/>
+        </g>
+        <rect x="14" y="52" width="26" height="8" fill="#ff2bd6" opacity=".8"/><rect x="52" y="64" width="26" height="16" fill="#00eaff" opacity=".55"/>
+        <rect x="90" y="56" width="26" height="22" fill="#ff3355" opacity=".55"/><rect x="128" y="60" width="26" height="14" fill="#39ff6a" opacity=".5"/>
+        <rect x="166" y="52" width="26" height="26" fill="#ffb300" opacity=".55"/><rect x="204" y="58" width="22" height="18" fill="#ff2bd6" opacity=".45"/>
+        <g fill="#c9f3ff"><rect x="12" y="95" width="26" height="2"/><rect x="50" y="95" width="22" height="2"/><rect x="88" y="95" width="28" height="2"/><rect x="126" y="95" width="20" height="2"/><rect x="164" y="95" width="26" height="2"/><rect x="202" y="95" width="22" height="2"/></g>
+        <g fill="#5b7799"><rect x="12" y="99" width="16" height="2"/><rect x="50" y="99" width="14" height="2"/><rect x="88" y="99" width="18" height="2"/><rect x="126" y="99" width="12" height="2"/><rect x="164" y="99" width="16" height="2"/><rect x="202" y="99" width="12" height="2"/></g>
+      </symbol>
+
       <symbol id="m-homeassistant" viewBox="0 0 240 114">
         <rect width="240" height="114" fill="#f0f2f4"/>
         <rect width="240" height="16" fill="#18a6e8"/>
@@ -409,6 +430,10 @@ data:
           "Sends photos from a phone to the Presto's slideshow",
           "Shows exactly how each one will look on its screen",
           "Fixes a crop, hides or deletes a photo"]},
+        {id: "games", name: "Game library", glaze: "#00eaff", on: "#012a30", points: [
+          "Every game ROM in the homelab, searchable, with box art",
+          "Shows which devices play each system, and how well",
+          "Year, genre and players, and a link to find the manual"]},
         {id: "homeassistant", name: "Home Assistant", glaze: "#18a6e8", on: "#04222f", points: [
           "Talks to the thermostat over HomeKit",
           "Gives the wall panel its readings and controls",
