@@ -83,7 +83,7 @@ spec:
                 - name: DST
                   value: /movies/480p
                 - name: THREADS
-                  value: "2"
+                  value: "4"  # first pass of the anime backlog; back to "2" after (2026-11-14)
               volumeMounts:
                 - name: movies
                   mountPath: /movies
@@ -102,7 +102,7 @@ spec:
                   cpu: 100m
                   memory: 256Mi
                 limits:
-                  cpu: "2"
+                  cpu: "4"
                   # Decoding a 4K HEVC original peaks well under this.
                   memory: 2Gi
           volumes:
