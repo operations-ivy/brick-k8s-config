@@ -33,7 +33,10 @@ class MediaTest(unittest.TestCase):
         self.assertEqual(pod["priorityClassName"], by_kind["PriorityClass"]["metadata"]["name"])
         self.assertLess(by_kind["PriorityClass"]["value"], 0)
         self.assertEqual(by_kind["PriorityClass"]["preemptionPolicy"], "Never")
-        self.assertEqual(container["resources"]["limits"]["cpu"], "2")
+        # As many threads as cores, and never more than brick2000's four.
+        [threads] = [e["value"] for e in container["env"] if e["name"] == "THREADS"]
+        self.assertEqual(container["resources"]["limits"]["cpu"], threads)
+        self.assertLessEqual(int(threads), 4)
         self.assertIn("@sha256:", container["image"])
         self.assertEqual(pod["nodeSelector"], {"kubernetes.io/hostname": "brick2000"})
         [movies] = [v for v in pod["volumes"] if "hostPath" in v]
