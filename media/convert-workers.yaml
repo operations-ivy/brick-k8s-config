@@ -1,0 +1,200 @@
+# More hands for the 480p backlog (the user, 2026-11-14): brick666 converts too.
+# convert-server.py on brick2000 hands out videos from the end of the backlog;
+# convert-worker.sh on brick666 fetches each one, converts it with
+# convert-480p.sh's own encode and sends the copy back. The CronJob skips
+# what a worker has claimed. The same worker runs anywhere that can reach the
+# server: the laptop runs it in Docker over `kubectl port-forward`. Scale the
+# worker to 0 when the backlog is done.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: movies-convert-server
+  namespace: media
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: movies-convert-server
+  template:
+    metadata:
+      labels:
+        app: movies-convert-server
+    spec:
+      priorityClassName: media-batch
+      nodeSelector:
+        kubernetes.io/hostname: brick2000
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: docker.io/library/python:3.11-slim-bookworm@sha256:a36c24f9cbdf4fd0f52d67f0823eeac19c2028c637cecc392d97f980d4fec56b
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "-u", "/scripts/convert-server.py"]
+          env:
+            - name: SRC
+              value: /movies/library
+            - name: DST
+              value: /movies/480p
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+          volumeMounts:
+            - name: movies
+              mountPath: /movies
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
+      volumes:
+        - name: movies
+          hostPath:
+            path: /extra/movies
+            type: Directory
+        - name: scripts
+          configMap:
+            name: movies-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: movies-convert-server
+  namespace: media
+spec:
+  selector:
+    app: movies-convert-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: movies-convert-worker
+  namespace: media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: movies-convert-worker
+  template:
+    metadata:
+      labels:
+        app: movies-convert-worker
+    spec:
+      priorityClassName: media-batch
+      # brick666: a Pi 5 that's otherwise nearly idle.
+      nodeSelector:
+        kubernetes.io/hostname: brick666
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          # The CronJob's image: the same ffmpeg for the same copies.
+          image: docker.io/linuxserver/ffmpeg:9.0.2-cli-ls87@sha256:6547359fac23a2747e606d380e10267b2923a38f68485d9cacefd039e74d3aa8
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/scripts/convert-worker.sh"]
+          env:
+            - name: SERVER
+              value: http://movies-convert-server:8080
+            - name: WORK
+              value: /work
+            - name: THREADS
+              value: "4"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: work
+              mountPath: /work
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "4", memory: 2Gi}
+      volumes:
+        - name: scripts
+          configMap:
+            name: movies-script
+        - name: work
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+# Only the workers reach the server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: movies-convert-server
+  namespace: media
+spec:
+  podSelector:
+    matchLabels:
+      app: movies-convert-server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: movies-convert-worker
+      ports:
+        - port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: movies-convert-worker
+  namespace: media
+spec:
+  podSelector:
+    matchLabels:
+      app: movies-convert-worker
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: movies-convert-server
+      ports:
+        - port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
