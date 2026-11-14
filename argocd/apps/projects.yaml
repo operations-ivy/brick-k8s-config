@@ -51,9 +51,11 @@ spec:
     - https://github.com/operations-ivy/home-assistant.git
     - https://github.com/operations-ivy/chucks-wisdom.git
     - https://github.com/operations-ivy/presto.git
+    - https://github.com/operations-ivy/brick-games.git
   destinations:
     - {server: https://kubernetes.default.svc, namespace: overwatch}
     - {server: https://kubernetes.default.svc, namespace: presto}
+    - {server: https://kubernetes.default.svc, namespace: games}
     - {server: https://kubernetes.default.svc, namespace: wigle}
     - {server: https://kubernetes.default.svc, namespace: home-assistant}
     - {server: https://kubernetes.default.svc, namespace: chuck}

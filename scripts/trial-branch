@@ -37,6 +37,7 @@ GIT = "https://github.com/"
 HUB_REPO = "whitepatrick"
 # Each app's images, as in its kustomization.yaml (tests check every app repo is here).
 IMAGES = {
+    "brick-games": ["brick-games"],  # the page and the scan both run it
     "chucks-wisdom": ["joke-importer", "joke-reader"],
     "overwatch": ["overwatch"],
     "presto": ["presto-photos"],  # presto-feed, presto-photos-web and -convert all run it (#98)
