@@ -9,6 +9,8 @@
 #   for the next run.
 # - A file ffmpeg can't convert gets a <name>.mp4.failed marker and is skipped
 #   from then on; delete the marker to try again.
+# - The English audio track if there is one (a dual-audio file's first track is
+#   often Japanese), else the first.
 # - Text subtitles are kept; if the subtitles can't be converted (picture
 #   subtitles, such as a Blu-ray's), the copy is made without them.
 # - Originals are never changed or deleted.
@@ -18,6 +20,27 @@ SRC=${SRC:-/movies/library}
 DST=${DST:-/movies/480p}
 SETTLE=${SETTLE:-600}
 THREADS=${THREADS:-2}
+
+audio_track() {  # audio_track <input>: "0:<index>" of an English audio track, or nothing
+    local index
+    index=$(ffprobe -v error -select_streams a -show_entries stream=index:stream_tags=language \
+        -of csv=p=0 "$1" | awk -F, 'tolower($2) == "eng" || tolower($2) == "en" { print $1; exit }')
+    [ -n "$index" ] && echo "0:$index"
+}
+
+encode() {  # encode <input> <output> [subtitle options...]
+    local in=$1 out=$2 audio
+    shift 2
+    audio=$(audio_track "$in")
+    nice -n 19 ffmpeg -nostdin -hide_banner -loglevel error -y -i "$in" \
+        -map 0:v:0 -map "${audio:-0:a:0?}" "$@" \
+        -vf "scale='trunc(ih*dar/2)*2':ih,setsar=1,scale=-2:'min(480,ih)',setsar=1" \
+        -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -threads "$THREADS" \
+        -c:a aac -ac 2 -b:a 128k -movflags +faststart -f mp4 "$out"
+}
+
+# Sourced (tests/test_media.py): define the functions only.
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
 
 mkdir -p "$SRC" "$DST"
 # One run at a time, even a Job started by hand beside the CronJob's own
@@ -29,16 +52,6 @@ if ! flock -n 9; then
     exit 0
 fi
 converted=0 failed=0 waiting=0 present=0
-
-encode() {  # encode <input> <output> [subtitle options...]
-    local in=$1 out=$2
-    shift 2
-    nice -n 19 ffmpeg -nostdin -hide_banner -loglevel error -y -i "$in" \
-        -map 0:v:0 -map '0:a:0?' "$@" \
-        -vf "scale='trunc(ih*dar/2)*2':ih,setsar=1,scale=-2:'min(480,ih)',setsar=1" \
-        -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -threads "$THREADS" \
-        -c:a aac -ac 2 -b:a 128k -movflags +faststart -f mp4 "$out"
-}
 
 while IFS= read -r -d '' in; do
     rel=${in#"$SRC"/}

@@ -1,6 +1,8 @@
 """media/: the movies-480p CronJob and its script (stdlib unittest)."""
 
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,19 @@ def docs(path: Path) -> list[dict]:
     return [d for d in yaml.safe_load_all(path.read_text()) if d]
 
 
+def audio_track(probe_output: str) -> str:
+    """Run the script's audio_track with a fake ffprobe that prints probe_output."""
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "out").write_text(probe_output)
+        fake = Path(tmp) / "ffprobe"
+        fake.write_text('#!/bin/sh\ncat "$(dirname "$0")/out"\n')
+        fake.chmod(0o755)
+        env = dict(os.environ, PATH=f"{tmp}:{os.environ['PATH']}")
+        result = subprocess.run(["bash", "-c", 'source "$1"; audio_track x.mkv', "bash", str(MEDIA / "convert-480p.sh")],
+                                capture_output=True, text=True, env=env)
+    return result.stdout.strip()
+
+
 class MediaTest(unittest.TestCase):
     def test_configmap_carries_the_script(self):
         [cm] = docs(MEDIA / "movies-script.yaml")
@@ -23,6 +38,14 @@ class MediaTest(unittest.TestCase):
     def test_script_parses(self):
         result = subprocess.run(["bash", "-n", str(MEDIA / "convert-480p.sh")], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_english_audio_is_chosen(self):
+        cases = (("1,jpn\n2,eng\n", "0:2"), ("1,ENG\n2,jpn\n", "0:1"),
+                 # No English track: nothing, so encode falls back to the first audio track.
+                 ("1,jpn\n", ""), ("1\n", ""))
+        for probe, expected in cases:
+            with self.subTest(probe=probe):
+                self.assertEqual(audio_track(probe), expected)
 
     def test_cronjob_is_gentle_and_pinned(self):
         by_kind = {d["kind"]: d for d in docs(MEDIA / "movies.yaml")}
