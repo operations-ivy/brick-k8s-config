@@ -126,7 +126,9 @@ spec:
             - name: WORK
               value: /work
             - name: THREADS
-              value: "4"
+              # Two: four held brick666 at 84.5 °C and throttling, its fan
+              # already at full speed (2026-11-14).
+              value: "2"
           volumeMounts:
             - name: scripts
               mountPath: /scripts
@@ -142,7 +144,7 @@ spec:
               drop: ["ALL"]
           resources:
             requests: {cpu: 100m, memory: 256Mi}
-            limits: {cpu: "4", memory: 2Gi}
+            limits: {cpu: "2", memory: 2Gi}
       volumes:
         - name: scripts
           configMap:
