@@ -119,6 +119,14 @@ class ConvertServerTest(unittest.TestCase):
         (self.dst / "show/.A - 03.mp4.part").touch()  # the CronJob is on it
         self.assertEqual(self.server.pending(time.time()), ["show/B - 01.mp4"])
 
+    def test_mpeg_files_are_converted_too(self):
+        (self.src / "show/D - 01.mpg").write_bytes(b"mpeg-2")
+        (self.src / "show/D - 02.MPEG").write_bytes(b"mpeg-2")
+        pending = self.server.pending(time.time())
+        self.assertIn("show/D - 01.mpg", pending)
+        self.assertIn("show/D - 02.MPEG", pending)
+        self.assertIn("-iname '*.mpg' -o -iname '*.mpeg'", (MEDIA / "convert-480p.sh").read_text())
+
     def test_each_claim_takes_a_different_video(self):
         first, second = self.server.claim(time.time()), self.server.claim(time.time())
         self.assertNotEqual(first, second)

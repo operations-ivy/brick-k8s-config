@@ -27,7 +27,7 @@ SRC = Path(os.environ.get("SRC", "/movies/library"))
 DST = Path(os.environ.get("DST", "/movies/480p"))
 SETTLE = int(os.environ.get("SETTLE", "600"))
 CLAIM_HOURS = float(os.environ.get("CLAIM_HOURS", "6"))
-EXTS = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".webm", ".ts", ".wmv"}
+EXTS = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".webm", ".ts", ".wmv", ".mpg", ".mpeg"}
 CHUNK = 1 << 20
 CLAIM_ID = re.compile(r"[0-9a-f]{40}")
 
