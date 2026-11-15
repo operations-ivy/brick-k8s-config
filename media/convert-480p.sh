@@ -80,6 +80,6 @@ while IFS= read -r -d '' in; do
         echo "failed: $rel"
     fi
 done < <(find "$SRC" -type f ! -name '.*' \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.m4v' \
-    -o -iname '*.avi' -o -iname '*.mov' -o -iname '*.webm' -o -iname '*.ts' -o -iname '*.wmv' \) -print0 | sort -z)
+    -o -iname '*.avi' -o -iname '*.mov' -o -iname '*.webm' -o -iname '*.ts' -o -iname '*.wmv' -o -iname '*.mpg' -o -iname '*.mpeg' \) -print0 | sort -z)
 
 echo "summary: converted=$converted failed=$failed waiting=$waiting already=$present"

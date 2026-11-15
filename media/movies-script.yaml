@@ -89,7 +89,7 @@ data:
             echo "failed: $rel"
         fi
     done < <(find "$SRC" -type f ! -name '.*' \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.m4v' \
-        -o -iname '*.avi' -o -iname '*.mov' -o -iname '*.webm' -o -iname '*.ts' -o -iname '*.wmv' \) -print0 | sort -z)
+        -o -iname '*.avi' -o -iname '*.mov' -o -iname '*.webm' -o -iname '*.ts' -o -iname '*.wmv' -o -iname '*.mpg' -o -iname '*.mpeg' \) -print0 | sort -z)
 
     echo "summary: converted=$converted failed=$failed waiting=$waiting already=$present"
   convert-server.py: |
@@ -122,7 +122,7 @@ data:
     DST = Path(os.environ.get("DST", "/movies/480p"))
     SETTLE = int(os.environ.get("SETTLE", "600"))
     CLAIM_HOURS = float(os.environ.get("CLAIM_HOURS", "6"))
-    EXTS = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".webm", ".ts", ".wmv"}
+    EXTS = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".webm", ".ts", ".wmv", ".mpg", ".mpeg"}
     CHUNK = 1 << 20
     CLAIM_ID = re.compile(r"[0-9a-f]{40}")
 
