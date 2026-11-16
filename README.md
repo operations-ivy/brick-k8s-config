@@ -518,6 +518,9 @@ the same picture there.
   originals are never changed. A file ffmpeg can't read gets a
   `<name>.mp4.failed` marker and is skipped; delete the marker to retry.
   Picture subtitles are dropped, text ones kept. No network (default-deny).
+- **Same name, two videos** (`X.mkv` and `X.mp4` in one folder, the names
+  compared ignoring case): the first in byte order keeps `X.mp4`, the others
+  get `X.<extension>.mp4` (`X.mp4.mp4`), and each run logs a `same name:` line.
 - **The script** is `media/convert-480p.sh`; `media/movies-script.yaml` is
   generated from it with `scripts/media-configmap` (`tests/test_media.py`
   checks they match). Logs: `kubectl -n media logs job/<latest>` or Loki,

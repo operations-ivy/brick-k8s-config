@@ -92,6 +92,47 @@ class MediaTest(unittest.TestCase):
 
 
 
+def output_rels(rels: list[str]) -> list[str]:
+    """The script's 480p names for rels, as one run would give them."""
+    script = 'source "$1"; shift; claim_names "$@"; for r in "$@"; do output_rel "$r"; echo; done'
+    result = subprocess.run(["bash", "-c", script, "bash", str(MEDIA / "convert-480p.sh"), *rels],
+                            capture_output=True, text=True, check=True)
+    return result.stdout.splitlines()
+
+
+class SameNameTest(unittest.TestCase):
+    """Two videos of one name in one folder must not share one 480p copy (issue #112)."""
+
+    def test_the_first_keeps_the_name_the_others_keep_their_extension(self):
+        rels = ["show/X.mp4", "show/X.mkv", "show/x.AVI", "other/X.mp4", "show/Y.mkv", "Möbius.mkv", "möbius.mp4"]
+        self.assertEqual(output_rels(rels), [
+            "show/X.mp4.mp4",
+            "show/X.mp4",  # X.mkv: first in byte order, so it keeps X.mp4
+            "show/x.AVI.mp4",
+            "other/X.mp4",  # another folder: no clash
+            "show/Y.mp4",  # no clash: the name every copy had before
+            "Möbius.mp4",
+            "möbius.mp4.mp4",
+        ])
+
+    def test_server_names_copies_as_the_script_does(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = Path(tmp) / "library", Path(tmp) / "480p"
+            rels = ["show/X.mp4", "show/X.mkv", "show/x.AVI", "show/Y.mkv", "show/.X.avi", "Möbius.mkv", "möbius.mp4"]
+            for rel in rels:
+                (src / rel).parent.mkdir(parents=True, exist_ok=True)
+                (src / rel).write_bytes(b"video")
+            server = load_server(src, dst)
+            videos = [r for r in rels if not Path(r).name.startswith(".")]
+            self.assertEqual([str(server.output(r).relative_to(dst)) for r in videos], output_rels(videos))
+            # Both get converted, to different copies.
+            (dst / "show").mkdir(parents=True)
+            (dst / "show/X.mp4").write_bytes(b"the mkv's copy")
+            pending = server.pending(time.time())
+            self.assertIn("show/X.mp4", pending)
+            self.assertNotIn("show/X.mkv", pending)
+
+
 def load_server(src: Path, dst: Path) -> types.ModuleType:
     """convert-server.py as a module, pointed at temporary folders."""
     spec = importlib.util.spec_from_file_location("convert_server", MEDIA / "convert-server.py")
