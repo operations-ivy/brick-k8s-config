@@ -15,6 +15,10 @@
 #   subtitles, such as a Blu-ray's), the copy is made without them.
 # - Originals are never changed or deleted.
 # - One run at a time (a lock file in $DST), however the run was started.
+# - Two videos with one name in one folder (X.mkv and X.mp4; the stems
+#   compared ignoring ASCII case, as exFAT does): the first in byte order keeps
+#   X.mp4, which is the copy this script already made of it, and each other
+#   gets X.<its extension>.mp4 (X.mp4.mp4). A "same name:" line says so.
 set -u
 SRC=${SRC:-/movies/library}
 DST=${DST:-/movies/480p}
@@ -40,6 +44,30 @@ encode() {  # encode <input> <output> [subtitle options...]
         -c:a aac -ac 2 -b:a 128k -movflags +faststart -f mp4 "$out"
 }
 
+declare -A OWNER  # "<folder>/<stem, ASCII lowercase>" -> the video that keeps <stem>.mp4
+
+name_key() {  # name_key <rel>: the folder and the stem in ASCII lowercase (exFAT ignores case)
+    local LC_ALL=C stem=${1##*/}
+    stem=${stem%.*}
+    if [[ $1 == */* ]]; then printf '%s/%s' "${1%/*}" "${stem,,}"; else printf '%s' "${stem,,}"; fi
+}
+
+claim_names() {  # claim_names <rel>...: the first of each name (in byte order) keeps it
+    local LC_ALL=C rel key
+    for rel in "$@"; do
+        key=$(name_key "$rel")
+        if [[ -z ${OWNER[$key]+set} || $rel < ${OWNER[$key]} ]]; then
+            OWNER[$key]=$rel
+        fi
+    done
+}
+
+output_rel() {  # output_rel <rel>: the 480p copy's path under $DST (after claim_names)
+    local key
+    key=$(name_key "$1")
+    if [[ ${OWNER[$key]-$1} == "$1" ]]; then printf '%s.mp4' "${1%.*}"; else printf '%s.mp4' "$1"; fi
+}
+
 # Sourced (tests/test_media.py): define the functions only.
 [[ "${BASH_SOURCE[0]}" != "$0" ]] && return 0
 
@@ -54,9 +82,18 @@ if ! flock -n 9; then
 fi
 converted=0 failed=0 waiting=0 present=0
 
+rels=()
 while IFS= read -r -d '' in; do
-    rel=${in#"$SRC"/}
-    out="$DST/${rel%.*}.mp4"
+    rels+=("${in#"$SRC"/}")
+done < <(find "$SRC" -type f ! -name '.*' \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.m4v' \
+    -o -iname '*.avi' -o -iname '*.mov' -o -iname '*.webm' -o -iname '*.ts' -o -iname '*.wmv' -o -iname '*.mpg' -o -iname '*.mpeg' \) -print0 | LC_ALL=C sort -z)
+claim_names "${rels[@]}"
+
+for rel in "${rels[@]}"; do
+    in="$SRC/$rel"
+    out="$DST/$(output_rel "$rel")"
+    owner=${OWNER[$(name_key "$rel")]}
+    [[ $owner != "$rel" ]] && echo "same name: $rel -> ${out#"$DST"/} ($owner keeps ${owner%.*}.mp4)"
     if [ -e "$out" ]; then present=$((present + 1)); continue; fi
     [ -e "$out.failed" ] && continue
     # Claimed by a worker on another node (convert-server.py), within 6 hours.
@@ -80,7 +117,6 @@ while IFS= read -r -d '' in; do
         failed=$((failed + 1))
         echo "failed: $rel"
     fi
-done < <(find "$SRC" -type f ! -name '.*' \( -iname '*.mkv' -o -iname '*.mp4' -o -iname '*.m4v' \
-    -o -iname '*.avi' -o -iname '*.mov' -o -iname '*.webm' -o -iname '*.ts' -o -iname '*.wmv' -o -iname '*.mpg' -o -iname '*.mpeg' \) -print0 | sort -z)
+done
 
 echo "summary: converted=$converted failed=$failed waiting=$waiting already=$present"

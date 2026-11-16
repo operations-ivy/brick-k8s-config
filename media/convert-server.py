@@ -13,6 +13,10 @@ A claim is a file in $DST/.claims named by the sha1 of the video's path under
 $SRC; convert-480p.sh skips claimed videos too, so no video is converted twice.
 Workers take the backlog from the end, the CronJob from the start. A claim
 older than CLAIM_HOURS is a worker that died: the video is handed out again.
+
+Copies are named as convert-480p.sh names them: X.mkv -> X.mp4, but when a
+folder has two videos of one name (X.mkv and X.mp4), only the first in byte
+order gets X.mp4 and the others X.<extension>.mp4.
 """
 
 import hashlib
@@ -36,8 +40,27 @@ def claim_id(rel: str) -> str:
     return hashlib.sha1(rel.encode()).hexdigest()
 
 
+def is_video(path: Path) -> bool:
+    return not path.name.startswith(".") and path.suffix.lower() in EXTS and path.is_file()
+
+
+def name_key(name: str) -> bytes:
+    """A video's stem, ASCII lowercase (exFAT ignores case), as convert-480p.sh's name_key."""
+    return Path(name).stem.encode().lower()
+
+
 def output(rel: str) -> Path:
-    return DST / Path(rel).with_suffix(".mp4")
+    """The 480p copy of rel: <stem>.mp4, or <name>.mp4 when an earlier video in
+    byte order (convert-480p.sh's LC_ALL=C sort) has the same stem."""
+    path = Path(rel)
+    name, key = path.name.encode(), name_key(path.name)
+    try:
+        siblings = [p.name.encode() for p in (SRC / path.parent).iterdir() if name_key(p.name) == key and is_video(p)]
+    except FileNotFoundError:  # the folder was removed while a worker had the video
+        siblings = []
+    if min(siblings, default=name) == name:
+        return DST / path.with_suffix(".mp4")
+    return DST / path.with_name(path.name + ".mp4")
 
 
 def claimed(rel: str, now: float) -> bool:
@@ -50,7 +73,7 @@ def pending(now: float) -> list[str]:
     converted by the CronJob (its dotted .part), newest-name first."""
     todo = []
     for path in SRC.rglob("*"):
-        if path.name.startswith(".") or path.suffix.lower() not in EXTS or not path.is_file():
+        if not is_video(path):
             continue
         rel = str(path.relative_to(SRC))
         out = output(rel)
