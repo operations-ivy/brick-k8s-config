@@ -93,7 +93,9 @@ metadata:
   name: movies-convert-worker
   namespace: media
 spec:
-  replicas: 1
+  # 0 since 2026-11-16 (the user): brick2000 converts the rest of the backlog
+  # slowly on its own. Set to 1 to bring brick666 back in.
+  replicas: 0
   selector:
     matchLabels:
       app: movies-convert-worker

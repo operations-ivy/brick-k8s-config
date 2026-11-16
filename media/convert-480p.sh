@@ -20,6 +20,7 @@ SRC=${SRC:-/movies/library}
 DST=${DST:-/movies/480p}
 SETTLE=${SETTLE:-600}
 THREADS=${THREADS:-2}
+PRESET=${PRESET:-medium}  # x264 preset: veryfast is about twice as fast, files ~20-30% bigger
 
 audio_track() {  # audio_track <input>: "0:<index>" of an English audio track, or nothing
     local index
@@ -35,7 +36,7 @@ encode() {  # encode <input> <output> [subtitle options...]
     nice -n 19 ffmpeg -nostdin -hide_banner -loglevel error -y -i "$in" \
         -map 0:v:0 -map "${audio:-0:a:0?}" "$@" \
         -vf "scale='trunc(ih*dar/2)*2':ih,setsar=1,scale=-2:'min(480,ih)',setsar=1" \
-        -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -threads "$THREADS" \
+        -c:v libx264 -preset "${PRESET:-medium}" -crf 22 -pix_fmt yuv420p -threads "$THREADS" \
         -c:a aac -ac 2 -b:a 128k -movflags +faststart -f mp4 "$out"
 }
 
