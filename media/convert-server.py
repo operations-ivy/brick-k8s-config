@@ -53,13 +53,12 @@ def output(rel: str) -> Path:
     """The 480p copy of rel: <stem>.mp4, or <name>.mp4 when an earlier video in
     byte order (convert-480p.sh's LC_ALL=C sort) has the same stem."""
     path = Path(rel)
-    key = name_key(path.name)
+    name, key = path.name.encode(), name_key(path.name)
     try:
         siblings = [p.name.encode() for p in (SRC / path.parent).iterdir() if name_key(p.name) == key and is_video(p)]
     except FileNotFoundError:  # the folder was removed while a worker had the video
         siblings = []
-    first = min(siblings, default=path.name.encode())
-    if first == path.name.encode():
+    if min(siblings, default=name) == name:
         return DST / path.with_suffix(".mp4")
     return DST / path.with_name(path.name + ".mp4")
 
