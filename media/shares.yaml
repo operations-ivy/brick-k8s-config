@@ -1,0 +1,123 @@
+# The movies and games on brick2000's data drive (/extra) as Samba shares on
+# the LAN (the user, 2026-11-16): \\192.168.1.225\movies and \\192.168.1.225\games.
+#
+# - Read-only for everyone, through one account, `media`, that every device
+#   signs in with (laptop, handhelds, TV, other hosts).
+# - One locked-down service account, `mediawriter`, is the only one that can
+#   write. It is Samba uid 1000, the owner of every file on the exFAT drive
+#   (mounted uid=1000,gid=1000,fmask=0022,dmask=0022), so the drive's own
+#   permissions let it, and nobody else, write.
+# - Passwords: Secret media-shares (brick-k8s-secrets
+#   media/media-shares-sealedsecret.yaml), keys media-password and
+#   mediawriter-password.
+#
+# No NFS: exFAT has no file handles (name_to_handle_at fails), which the
+# kernel's NFS server and NFS-Ganesha both need. See the PR.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-samba
+  namespace: media
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: media-samba
+  template:
+    metadata:
+      labels:
+        app: media-samba
+    spec:
+      # The drive is on brick2000.
+      nodeSelector:
+        kubernetes.io/hostname: brick2000
+      containers:
+        - name: samba
+          # Samba 4.23.8 on Alpine 3.24.4 (ServerContainers/samba).
+          image: ghcr.io/servercontainers/samba:a3.24.4-s4.23.8-r0@sha256:c14d1a0e7da2fd038fdcc39eb4c42c6995f73f0966c206a4116aca4fae89c49a
+          ports:
+            - {name: smb, containerPort: 445}
+          env:
+            - name: ACCOUNT_media
+              valueFrom: {secretKeyRef: {name: media-shares, key: media-password}}
+            - {name: UID_media, value: "1001"}
+            - name: ACCOUNT_mediawriter
+              valueFrom: {secretKeyRef: {name: media-shares, key: mediawriter-password}}
+            - {name: UID_mediawriter, value: "1000"}
+            - {name: FAIL_FAST, value: "1"}
+            # One port, 445, behind a service address: no discovery daemons.
+            - {name: AVAHI_DISABLE, value: "1"}
+            - {name: WSDD2_DISABLE, value: "1"}
+            - {name: NETBIOS_DISABLE, value: "1"}
+            - {name: DISABLE_FRUIT_DEFAULTS, value: "1"}
+            - {name: SAMBA_CONF_MAP_TO_GUEST, value: "Never"}
+            - {name: SAMBA_CONF_SERVER_STRING, value: "brick2000 media"}
+            # SMB2.1 and up (Android's VLC and Kodi speak SMB2/3); LAN and the
+            # pod network only (kube-proxy SNATs LAN clients to a node address).
+            - name: SAMBA_GLOBAL_STANZA
+              value: "server min protocol = SMB2_10; hosts allow = 192.168.1. 10.42. 127.; hosts deny = ALL; restrict anonymous = 2; load printers = no; disable spoolss = yes"
+            - name: SAMBA_VOLUME_CONFIG_movies
+              value: "[movies]; path = /shares/movies; valid users = media mediawriter; read only = yes; write list = mediawriter; browseable = yes; guest ok = no"
+            - name: SAMBA_VOLUME_CONFIG_games
+              value: "[games]; path = /shares/games; valid users = media mediawriter; read only = yes; write list = mediawriter; browseable = yes; guest ok = no"
+          readinessProbe:
+            tcpSocket: {port: smb}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: smb}
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 512Mi}
+          volumeMounts:
+            # HostToContainer: a remount of /extra (the drive unplugged and
+            # back) shows up here without restarting the pod.
+            - {name: movies, mountPath: /shares/movies, mountPropagation: HostToContainer}
+            - {name: games, mountPath: /shares/games, mountPropagation: HostToContainer}
+      volumes:
+        - name: movies
+          hostPath: {path: /extra/movies, type: Directory}
+        - name: games
+          hostPath: {path: /extra/games, type: Directory}
+---
+# kube-vip answers ARP for 192.168.1.225 (its own election per Service, any
+# worker); externalIPs as for the front door (front-door/caddy.yaml), so
+# kube-proxy routes the address whatever the status says.
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-samba
+  namespace: media
+  annotations:
+    kube-vip.io/loadbalancerIPs: 192.168.1.225
+spec:
+  type: LoadBalancer
+  loadBalancerClass: kube-vip.io/kube-vip-class
+  externalIPs: [192.168.1.225]
+  externalTrafficPolicy: Cluster
+  selector:
+    app: media-samba
+  ports:
+    - {name: smb, port: 445, targetPort: smb}
+---
+# media has default-deny (movies.yaml): SMB in from the LAN and the pod
+# network (LAN clients arrive SNATed to a node address), nothing out.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: media-samba
+  namespace: media
+spec:
+  podSelector:
+    matchLabels:
+      app: media-samba
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock: {cidr: 192.168.1.0/24}
+        - ipBlock: {cidr: 10.42.0.0/16}
+      ports:
+        - {protocol: TCP, port: 445}
