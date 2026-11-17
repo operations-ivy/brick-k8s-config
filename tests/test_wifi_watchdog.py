@@ -20,8 +20,22 @@ n=$(cat "$FAKE/ping-calls" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "$FAK
 code=$(sed -n "${n}p" "$FAKE/ping-results")
 exit ${code:-0}
 """
-FAKE_MODPROBE = '#!/bin/sh\necho "modprobe $*" >> "$FAKE/modprobe.log"\n'
-FAKE_NMCLI = '#!/bin/sh\necho "nmcli $*" >> "$FAKE/modprobe.log"\n'
+FAKE_MODPROBE = '#!/bin/sh\necho "modprobe $*" >> "$FAKE/calls.log"\n'
+# NetworkManager: the device is ready (30), on the profile in `active`, with the
+# saved profiles in `profiles`; `connection up` fails for the names in up-fails.
+FAKE_NMCLI = """#!/bin/sh
+case "$*" in
+    "-g GENERAL.STATE device show"*) echo "30 (disconnected)" ;;
+    "-g GENERAL.CONNECTION device show"*) cat "$FAKE/active" 2>/dev/null ;;
+    "-g NAME,TYPE,AUTOCONNECT connection show") cat "$FAKE/profiles" ;;
+    "--wait 45 connection up "*)
+        echo "nmcli up $5" >> "$FAKE/calls.log"
+        grep -qx "$5" "$FAKE/up-fails" 2>/dev/null && exit 10
+        exit 0 ;;
+    *) echo "unexpected: nmcli $*" >> "$FAKE/calls.log"; exit 2 ;;
+esac
+"""
+PROFILES = "other:802-11-wireless:yes\nhome:802-11-wireless:yes\nspare:802-11-wireless:no\ncni0:bridge:no\n"
 
 
 def daemonset() -> dict:
@@ -39,42 +53,47 @@ def script() -> str:
 
 
 def run(ping_results: list[int], checks: int, holders: tuple[str, ...] = ("brcmfmac_cyw",),
-        no_route: bool = False) -> tuple[list[str], str]:
-    """Run the script for `checks` checks; return the modprobe and nmcli calls and its log.
-    IFACE is lo, so the wait for the interface to come back ends at once."""
+        no_route: bool = False, active: str = "", up_fails: tuple[str, ...] = ()) -> tuple[list[str], str]:
+    """Run the script for `checks` checks; return the modprobe and nmcli calls and its log."""
     with tempfile.TemporaryDirectory() as tmp:
         fake = Path(tmp)
         for name, body in (("ip", FAKE_IP), ("ping", FAKE_PING), ("modprobe", FAKE_MODPROBE),
-                           ("nmcli", FAKE_NMCLI),                            ("sleep", "#!/bin/sh\n")):
+                           ("nmcli", FAKE_NMCLI), ("sleep", "#!/bin/sh\n")):
             (fake / name).write_text(body)
             (fake / name).chmod(0o755)
         (fake / "ping-results").write_text("".join(f"{r}\n" for r in ping_results))
+        (fake / "profiles").write_text(PROFILES)
+        (fake / "up-fails").write_text("".join(f"{n}\n" for n in up_fails))
+        if active:
+            (fake / "active").write_text(active + "\n")
         if no_route:
             (fake / "no-route").touch()
         for h in holders:
             (fake / "modules" / "brcmfmac" / "holders" / h).mkdir(parents=True)
         env = dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}", FAKE=str(fake),
-                   MODULES=str(fake / "modules"), CHECKS=str(checks), IFACE="lo")
+                   MODULES=str(fake / "modules"), CHECKS=str(checks))
         result = subprocess.run(["bash", "-c", script()], capture_output=True, text=True, env=env, timeout=30)
-        modprobe_log = fake / "modprobe.log"
-        calls = modprobe_log.read_text().splitlines() if modprobe_log.exists() else []
+        log_file = fake / "calls.log"
+        calls = log_file.read_text().splitlines() if log_file.exists() else []
     return calls, result.stdout + result.stderr
 
 
-RELOAD = ["modprobe -r brcmfmac_cyw brcmfmac", "modprobe brcmfmac", "nmcli device connect lo"]
+MODPROBE = ["modprobe -r brcmfmac_cyw brcmfmac", "modprobe brcmfmac"]
+RELOAD = [*MODPROBE, "nmcli up other"]  # never saw a profile: the first saved one
 
 
 class WatchdogScriptTest(unittest.TestCase):
     def test_healthy_never_reloads(self):
-        calls, log = run([], checks=60)
+        calls, log = run([], checks=60, active="home")
         self.assertEqual(calls, [])
         self.assertNotIn("down", log)
 
     def test_three_minutes_down_reloads_once(self):
         calls, log = run([1] * 12, checks=13)
         self.assertEqual(calls, RELOAD)
-        self.assertIn("lo is down", log)
-        self.assertIn("lo is back", log)
+        self.assertIn("wlan0 is down", log)
+        self.assertIn("connected wlan0 to other", log)
+        self.assertIn("wlan0 is back", log)
 
     def test_eleven_failed_checks_do_not_reload(self):
         calls, _ = run([1] * 11, checks=20)
@@ -97,12 +116,28 @@ class WatchdogScriptTest(unittest.TestCase):
 
     def test_bookworm_holder(self):
         calls, _ = run([1] * 12, checks=12, holders=("brcmfmac_wcc",))
-        self.assertEqual(calls, ["modprobe -r brcmfmac_wcc brcmfmac", "modprobe brcmfmac", "nmcli device connect lo"])
+        self.assertEqual(calls[:2], ["modprobe -r brcmfmac_wcc brcmfmac", "modprobe brcmfmac"])
 
     def test_no_holders(self):
         calls, log = run([1] * 12, checks=12, holders=())
-        self.assertEqual(calls, ["modprobe -r brcmfmac", "modprobe brcmfmac", "nmcli device connect lo"])
+        self.assertEqual(calls[:2], ["modprobe -r brcmfmac", "modprobe brcmfmac"])
         self.assertIn("holders: none", log)
+
+    def test_brings_back_the_profile_it_was_on(self):
+        calls, log = run([0] + [1] * 12, checks=13, active="home")
+        self.assertEqual(calls, [*MODPROBE, "nmcli up home"])
+        self.assertIn("connected wlan0 to home", log)
+
+    def test_tries_the_other_saved_wifi_profiles_in_turn(self):
+        # Not "spare" (no autoconnect) or cni0 (not Wi-Fi).
+        calls, log = run([0] + [1] * 12, checks=13, active="home", up_fails=("home",))
+        self.assertEqual(calls, [*MODPROBE, "nmcli up home", "nmcli up other"])
+        self.assertIn("connected wlan0 to other", log)
+
+    def test_gives_up_after_three_rounds(self):
+        calls, log = run([1] * 12, checks=12, up_fails=("home", "other"))
+        self.assertEqual(calls, [*MODPROBE] + ["nmcli up other", "nmcli up home"] * 3)
+        self.assertIn("couldn't connect wlan0 (tried: other home)", log)
 
 
 class WatchdogManifestTest(unittest.TestCase):

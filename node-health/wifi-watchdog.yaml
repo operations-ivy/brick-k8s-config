@@ -13,8 +13,11 @@
 # Every 15 s it checks that wlan0 has a default route and the gateway answers
 # a ping (any of 3). After 12 failed checks in a row (3 minutes) it removes
 # brcmfmac and whatever holds it (brcmfmac_wcc on bookworm, brcmfmac_cyw on
-# trixie), loads it again, and connects wlan0 with nmcli (NetworkManager may
-# not autoconnect it: tried on brick666 2026-11-17, it stayed disconnected).
+# trixie), loads it again, and brings the Wi-Fi profile back up with nmcli:
+# the one it last saw connected, else each saved autoconnect Wi-Fi profile.
+# NetworkManager doesn't always do it itself (tried on brick666 2026-11-17:
+# wlan0 stayed disconnected, and `nmcli device connect` straight after the
+# reload failed before the scan had found the network).
 # Then it waits 40 checks (10 minutes) before it may reload again. Every event goes to its log
 # (Loki: {namespace="kube-system", container="wifi-watchdog"}).
 #
@@ -76,23 +79,45 @@ spec:
                   modprobe -r "${holders[@]}" brcmfmac || log "modprobe -r failed; loading it anyway"
                   sleep 3
                   modprobe brcmfmac || log "modprobe brcmfmac failed"
-                  # Connect it ourselves: NetworkManager may not autoconnect a
-                  # device it gave up on (or that someone disconnected).
-                  local i
-                  for i in {1..20}; do
-                      [[ -e /sys/class/net/$IFACE ]] && break
+                  connect
+              }
+
+              # Bring the Wi-Fi profile back up ourselves: NetworkManager may
+              # not autoconnect a device it gave up on (or that someone
+              # disconnected). The profile it was on, else each saved
+              # autoconnect Wi-Fi profile; 3 rounds while the scan fills in.
+              connect() {
+                  local i round name profiles=()
+                  for i in {1..30}; do  # until NetworkManager has it: 30 = disconnected
+                      [[ $(nmcli -g GENERAL.STATE device show "$IFACE" 2>/dev/null) == 30* ]] && break
                       sleep 1
                   done
-                  nmcli device connect "$IFACE" >/dev/null 2>&1 || log "nmcli device connect $IFACE failed"
+                  [[ -n $last_profile ]] && profiles=("$last_profile")
+                  while IFS= read -r name; do
+                      [[ $name == "$last_profile" ]] || profiles+=("$name")
+                  done < <(nmcli -g NAME,TYPE,AUTOCONNECT connection show 2>/dev/null |
+                           awk -F: '$2 == "802-11-wireless" && $3 == "yes" {print $1}')
+                  for round in 1 2 3; do
+                      for name in "${profiles[@]}"; do
+                          if nmcli --wait 45 connection up "$name" ifname "$IFACE" >/dev/null 2>&1; then
+                              log "connected $IFACE to $name"
+                              return 0
+                          fi
+                      done
+                      sleep 5
+                  done
+                  log "couldn't connect $IFACE (tried: ${profiles[*]:-no Wi-Fi profiles})"
               }
 
               log "watching $IFACE: reload after $FAILS_BEFORE_RELOAD failed checks ${INTERVAL}s apart"
-              fails=0 cooldown=0 down=0 n=0
+              fails=0 cooldown=0 down=0 n=0 last_profile=
               while (( CHECKS == 0 || n < CHECKS )); do
                   n=$((n + 1))
                   if healthy; then
                       (( down )) && log "$IFACE is back"
                       fails=0 down=0
+                      profile=$(nmcli -g GENERAL.CONNECTION device show "$IFACE" 2>/dev/null)
+                      [[ -n $profile ]] && last_profile=$profile
                   else
                       fails=$((fails + 1))
                       (( down )) || log "$IFACE is down: no default route, or the gateway doesn't answer"
