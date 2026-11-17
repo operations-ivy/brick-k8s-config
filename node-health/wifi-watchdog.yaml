@@ -1,0 +1,140 @@
+# wifi-watchdog: reloads a node's Wi-Fi driver when the node has been cut off
+# for 3 minutes, so a wedged driver heals itself instead of waiting for a
+# power-cycle.
+#
+# Why: on 2026-11-16 the router steered brick2000 to its other band, the
+# association was rejected, and from then on every attempt failed with
+# "Association request to the driver failed". brick2000 was off the network
+# for 14 minutes, with every PV (Home Assistant, Prometheus) down, until it was
+# power-cycled. Reloading brcmfmac fixes a wedged driver at once
+# (homelab-context docs/gotchas.md), but nobody can run that on a node they
+# can't reach. This runs on the node itself, so it can.
+#
+# Every 15 s it checks that wlan0 has a default route and the gateway answers
+# a ping (any of 3). After 12 failed checks in a row (3 minutes) it removes
+# brcmfmac and whatever holds it (brcmfmac_wcc on bookworm, brcmfmac_cyw on
+# trixie), loads it again, and brings the Wi-Fi profile back up with nmcli:
+# the one it last saw connected, else each saved autoconnect Wi-Fi profile.
+# NetworkManager doesn't always do it itself (tried on brick666 2026-11-17:
+# wlan0 stayed disconnected, and `nmcli device connect` straight after the
+# reload failed before the scan had found the network).
+# Then it waits 40 checks (10 minutes) before it may reload again. Every event goes to its log
+# (Loki: {namespace="kube-system", container="wifi-watchdog"}).
+#
+# It runs in the host's namespaces (nsenter into PID 1), with the host's ip,
+# ping and modprobe: privileged, hostPID. It tolerates every taint, so it runs
+# on brick420 too (its Wi-Fi carries the API server) and isn't evicted from a
+# node that has gone NotReady, which is when it's needed. The script is inline
+# so a change to it rolls the pods; tests/test_wifi_watchdog.py runs it.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: wifi-watchdog
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: wifi-watchdog
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wifi-watchdog
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wifi-watchdog
+    spec:
+      hostPID: true
+      hostNetwork: true
+      automountServiceAccountToken: false
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: wifi-watchdog
+          image: busybox:1.37.0
+          command: [nsenter, -t, "1", -m, -u, -i, -n, -p, bash, -c]
+          args:
+            - |
+              set -u
+              IFACE=${IFACE:-wlan0}
+              INTERVAL=${INTERVAL:-15}
+              FAILS_BEFORE_RELOAD=${FAILS_BEFORE_RELOAD:-12}
+              COOLDOWN_CHECKS=${COOLDOWN_CHECKS:-40}
+              MODULES=${MODULES:-/sys/module}
+              CHECKS=${CHECKS:-0}  # 0: forever; the tests set a count
+
+              log() { echo "wifi-watchdog: $*"; }
+
+              # A default route on the interface, and the gateway answers.
+              healthy() {
+                  local gw
+                  gw=$(ip -4 route show default dev "$IFACE" 2>/dev/null | awk '/^default/ {print $3; exit}')
+                  [[ -n $gw ]] && ping -q -c 3 -W 2 -I "$IFACE" "$gw" >/dev/null 2>&1
+              }
+
+              reload_driver() {
+                  local holders=()
+                  [[ -d $MODULES/brcmfmac/holders ]] && mapfile -t holders < <(ls "$MODULES/brcmfmac/holders")
+                  log "reloading brcmfmac (holders: ${holders[*]:-none})"
+                  modprobe -r "${holders[@]}" brcmfmac || log "modprobe -r failed; loading it anyway"
+                  sleep 3
+                  modprobe brcmfmac || log "modprobe brcmfmac failed"
+                  connect
+              }
+
+              # Bring the Wi-Fi profile back up ourselves: NetworkManager may
+              # not autoconnect a device it gave up on (or that someone
+              # disconnected). The profile it was on, else each saved
+              # autoconnect Wi-Fi profile; 3 rounds while the scan fills in.
+              connect() {
+                  local i round name profiles=()
+                  for i in {1..30}; do  # until NetworkManager has it: 30 = disconnected
+                      [[ $(nmcli -g GENERAL.STATE device show "$IFACE" 2>/dev/null) == 30* ]] && break
+                      sleep 1
+                  done
+                  [[ -n $last_profile ]] && profiles=("$last_profile")
+                  while IFS= read -r name; do
+                      [[ $name == "$last_profile" ]] || profiles+=("$name")
+                  done < <(nmcli -g NAME,TYPE,AUTOCONNECT connection show 2>/dev/null |
+                           awk -F: '$2 == "802-11-wireless" && $3 == "yes" {print $1}')
+                  for round in 1 2 3; do
+                      for name in "${profiles[@]}"; do
+                          if nmcli --wait 45 connection up "$name" ifname "$IFACE" >/dev/null 2>&1; then
+                              log "connected $IFACE to $name"
+                              return 0
+                          fi
+                      done
+                      sleep 5
+                  done
+                  log "couldn't connect $IFACE (tried: ${profiles[*]:-no Wi-Fi profiles})"
+              }
+
+              log "watching $IFACE: reload after $FAILS_BEFORE_RELOAD failed checks ${INTERVAL}s apart"
+              fails=0 cooldown=0 down=0 n=0 last_profile=
+              while (( CHECKS == 0 || n < CHECKS )); do
+                  n=$((n + 1))
+                  if healthy; then
+                      (( down )) && log "$IFACE is back"
+                      fails=0 down=0
+                      profile=$(nmcli -g GENERAL.CONNECTION device show "$IFACE" 2>/dev/null)
+                      [[ -n $profile ]] && last_profile=$profile
+                  else
+                      fails=$((fails + 1))
+                      (( down )) || log "$IFACE is down: no default route, or the gateway doesn't answer"
+                      down=1
+                      if (( fails >= FAILS_BEFORE_RELOAD && cooldown == 0 )); then
+                          reload_driver
+                          fails=0 cooldown=$COOLDOWN_CHECKS
+                      fi
+                  fi
+                  (( cooldown > 0 )) && cooldown=$((cooldown - 1))
+                  sleep "$INTERVAL"
+              done
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
