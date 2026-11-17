@@ -21,6 +21,7 @@ code=$(sed -n "${n}p" "$FAKE/ping-results")
 exit ${code:-0}
 """
 FAKE_MODPROBE = '#!/bin/sh\necho "modprobe $*" >> "$FAKE/modprobe.log"\n'
+FAKE_NMCLI = '#!/bin/sh\necho "nmcli $*" >> "$FAKE/modprobe.log"\n'
 
 
 def daemonset() -> dict:
@@ -39,11 +40,12 @@ def script() -> str:
 
 def run(ping_results: list[int], checks: int, holders: tuple[str, ...] = ("brcmfmac_cyw",),
         no_route: bool = False) -> tuple[list[str], str]:
-    """Run the script for `checks` checks; return the modprobe calls and its log."""
+    """Run the script for `checks` checks; return the modprobe and nmcli calls and its log.
+    IFACE is lo, so the wait for the interface to come back ends at once."""
     with tempfile.TemporaryDirectory() as tmp:
         fake = Path(tmp)
         for name, body in (("ip", FAKE_IP), ("ping", FAKE_PING), ("modprobe", FAKE_MODPROBE),
-                           ("sleep", "#!/bin/sh\n")):
+                           ("nmcli", FAKE_NMCLI),                            ("sleep", "#!/bin/sh\n")):
             (fake / name).write_text(body)
             (fake / name).chmod(0o755)
         (fake / "ping-results").write_text("".join(f"{r}\n" for r in ping_results))
@@ -52,14 +54,14 @@ def run(ping_results: list[int], checks: int, holders: tuple[str, ...] = ("brcmf
         for h in holders:
             (fake / "modules" / "brcmfmac" / "holders" / h).mkdir(parents=True)
         env = dict(os.environ, PATH=f"{fake}:{os.environ['PATH']}", FAKE=str(fake),
-                   MODULES=str(fake / "modules"), CHECKS=str(checks))
+                   MODULES=str(fake / "modules"), CHECKS=str(checks), IFACE="lo")
         result = subprocess.run(["bash", "-c", script()], capture_output=True, text=True, env=env, timeout=30)
         modprobe_log = fake / "modprobe.log"
         calls = modprobe_log.read_text().splitlines() if modprobe_log.exists() else []
     return calls, result.stdout + result.stderr
 
 
-RELOAD = ["modprobe -r brcmfmac_cyw brcmfmac", "modprobe brcmfmac"]
+RELOAD = ["modprobe -r brcmfmac_cyw brcmfmac", "modprobe brcmfmac", "nmcli device connect lo"]
 
 
 class WatchdogScriptTest(unittest.TestCase):
@@ -71,8 +73,8 @@ class WatchdogScriptTest(unittest.TestCase):
     def test_three_minutes_down_reloads_once(self):
         calls, log = run([1] * 12, checks=13)
         self.assertEqual(calls, RELOAD)
-        self.assertIn("wlan0 is down", log)
-        self.assertIn("wlan0 is back", log)
+        self.assertIn("lo is down", log)
+        self.assertIn("lo is back", log)
 
     def test_eleven_failed_checks_do_not_reload(self):
         calls, _ = run([1] * 11, checks=20)
@@ -95,11 +97,11 @@ class WatchdogScriptTest(unittest.TestCase):
 
     def test_bookworm_holder(self):
         calls, _ = run([1] * 12, checks=12, holders=("brcmfmac_wcc",))
-        self.assertEqual(calls, ["modprobe -r brcmfmac_wcc brcmfmac", "modprobe brcmfmac"])
+        self.assertEqual(calls, ["modprobe -r brcmfmac_wcc brcmfmac", "modprobe brcmfmac", "nmcli device connect lo"])
 
     def test_no_holders(self):
         calls, log = run([1] * 12, checks=12, holders=())
-        self.assertEqual(calls, ["modprobe -r brcmfmac", "modprobe brcmfmac"])
+        self.assertEqual(calls, ["modprobe -r brcmfmac", "modprobe brcmfmac", "nmcli device connect lo"])
         self.assertIn("holders: none", log)
 
 

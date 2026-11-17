@@ -13,8 +13,9 @@
 # Every 15 s it checks that wlan0 has a default route and the gateway answers
 # a ping (any of 3). After 12 failed checks in a row (3 minutes) it removes
 # brcmfmac and whatever holds it (brcmfmac_wcc on bookworm, brcmfmac_cyw on
-# trixie), loads it again, and NetworkManager reconnects. Then it waits 40
-# checks (10 minutes) before it may reload again. Every event goes to its log
+# trixie), loads it again, and connects wlan0 with nmcli (NetworkManager may
+# not autoconnect it: tried on brick666 2026-11-17, it stayed disconnected).
+# Then it waits 40 checks (10 minutes) before it may reload again. Every event goes to its log
 # (Loki: {namespace="kube-system", container="wifi-watchdog"}).
 #
 # It runs in the host's namespaces (nsenter into PID 1), with the host's ip,
@@ -75,6 +76,14 @@ spec:
                   modprobe -r "${holders[@]}" brcmfmac || log "modprobe -r failed; loading it anyway"
                   sleep 3
                   modprobe brcmfmac || log "modprobe brcmfmac failed"
+                  # Connect it ourselves: NetworkManager may not autoconnect a
+                  # device it gave up on (or that someone disconnected).
+                  local i
+                  for i in {1..20}; do
+                      [[ -e /sys/class/net/$IFACE ]] && break
+                      sleep 1
+                  done
+                  nmcli device connect "$IFACE" >/dev/null 2>&1 || log "nmcli device connect $IFACE failed"
               }
 
               log "watching $IFACE: reload after $FAILS_BEFORE_RELOAD failed checks ${INTERVAL}s apart"
