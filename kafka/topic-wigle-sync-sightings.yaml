@@ -1,0 +1,19 @@
+# wigle-sync's follows-me sightings (wigle-sync#83): one record per device per
+# drive, keyed "<MAC>|<drive>", so a drive sent again replaces its own records
+# (compacted). Kept a year: older drives drop out of the check. A few hundred
+# Bluetooth devices a drive, a few hundred bytes each: tens of MB a year.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: wigle-sync.sightings
+  namespace: brick-kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 1
+  replicas: 3
+  config:
+    cleanup.policy: compact,delete
+    retention.ms: 31536000000
+    min.compaction.lag.ms: 3600000
+    segment.bytes: 16777216

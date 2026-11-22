@@ -1,0 +1,18 @@
+# wigle-sync's follows-me candidates (wigle-sync#83): one record, key
+# "candidates", the newest list from the sync, read by wigle-console's FOLLOWS
+# ME panel. Compacted, kept forever.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: wigle-sync.follows
+  namespace: brick-kafka
+  labels:
+    strimzi.io/cluster: kafka
+spec:
+  partitions: 1
+  replicas: 3
+  config:
+    cleanup.policy: compact
+    retention.ms: -1
+    min.compaction.lag.ms: 3600000
+    segment.bytes: 1048576
