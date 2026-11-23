@@ -14,6 +14,7 @@
 # - Text subtitles are kept; if the subtitles can't be converted (picture
 #   subtitles, such as a Blu-ray's), the copy is made without them.
 # - Originals are never changed or deleted.
+# - Pictures, subtitles and metadata files are copied beside the copies.
 # - One run at a time (a lock file in $DST), however the run was started.
 # - Two videos with one name in one folder (X.mkv and X.mp4; the stems
 #   compared ignoring ASCII case, as exFAT does): the first in byte order keeps
@@ -119,4 +120,17 @@ for rel in "${rels[@]}"; do
     fi
 done
 
-echo "summary: converted=$converted failed=$failed waiting=$waiting already=$present"
+# Pictures, subtitles and metadata beside the videos (poster.jpg, X.jpg, X.srt,
+# info.json, X.nfo: homelab-context scripts/media-ingest ships them) follow to
+# the same path under $DST, so the handhelds' copies keep them. Copied again
+# when the original is newer; never converted.
+sidecars=0
+while IFS= read -r -d '' in; do
+    out="$DST/${in#"$SRC"/}"
+    [ -e "$out" ] && ! [ "$in" -nt "$out" ] && continue
+    mkdir -p "$(dirname "$out")"
+    cp -p "$in" "$out" && sidecars=$((sidecars + 1))
+done < <(find "$SRC" -type f ! -name '.*' \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \
+    -o -iname '*.srt' -o -iname '*.ass' -o -iname '*.vtt' -o -iname '*.nfo' -o -name 'info.json' \) -print0)
+
+echo "summary: converted=$converted failed=$failed waiting=$waiting already=$present sidecars=$sidecars"

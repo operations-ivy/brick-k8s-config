@@ -197,5 +197,29 @@ class ConvertServerTest(unittest.TestCase):
         self.assertNotIn("show/B - 01.mp4", self.server.pending(time.time()))
 
 
+class SidecarTest(unittest.TestCase):
+    """Posters, subtitles and metadata follow the videos to 480p (media-ingest ships them)."""
+
+    def test_sidecars_are_copied_and_refreshed_junk_is_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = Path(tmp) / "library", Path(tmp) / "480p"
+            for rel in ("tv/Show/poster.jpg", "tv/Show/info.json", "tv/Show/ep1.srt", "movies/X.nfo",
+                        "movies/X.PNG", "tv/Show/notes.txt", "tv/Show/.hidden.jpg"):
+                (src / rel).parent.mkdir(parents=True, exist_ok=True)
+                (src / rel).write_text(rel)
+            env = dict(os.environ, SRC=str(src), DST=str(dst))
+            run = lambda: subprocess.run(["bash", str(MEDIA / "convert-480p.sh")], capture_output=True,  # noqa: E731
+                                         text=True, env=env, check=True).stdout
+            self.assertIn("sidecars=5", run())
+            got = sorted(str(p.relative_to(dst)) for p in dst.rglob("*") if p.is_file() and p.name[0] != ".")
+            self.assertEqual(got, ["movies/X.PNG", "movies/X.nfo", "tv/Show/ep1.srt", "tv/Show/info.json",
+                                   "tv/Show/poster.jpg"])
+            self.assertIn("sidecars=0", run())
+            (src / "tv/Show/poster.jpg").write_text("new")
+            os.utime(src / "tv/Show/poster.jpg", (time.time() + 5, time.time() + 5))
+            self.assertIn("sidecars=1", run())
+            self.assertEqual((dst / "tv/Show/poster.jpg").read_text(), "new")
+
+
 if __name__ == "__main__":
     unittest.main()
