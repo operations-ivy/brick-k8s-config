@@ -151,7 +151,7 @@ prometheus:
     replicas: 1
     # Hosts outside the cluster (brick-cicd-config README, "Metrics"):
     # brick9000's node-exporter and Caddy, brick-status through the proxy (it
-    # listens on localhost there), brick1982's node-exporter and LCARS panel, and the Presto. The
+    # listens on localhost there), brick1982's node-exporter and wall panel, and the Presto. The
     # `instance` is the host's name, as node_uname_info's nodename. Targets
     # are host names, which the router's DNS resolves from each host's DHCP
     # lease, so a host that moves to a new address needs no change here. While
@@ -193,8 +193,12 @@ prometheus:
         static_configs:
           - targets: ["brick1982:9100"]
             labels: {instance: brick1982}
-      # The LCARS panel (operations-ivy/rpi_lcars), which replaced brick-arena.
-      - job_name: lcars
+      # brick1982's wall panel: straylight, the neon panel
+      # (operations-ivy/brick-panel, panel_*), which replaced LCARS
+      # (operations-ivy/rpi_lcars, lcars_*) as the default on 2026-11-22.
+      # One runs at a time on the same port (brick-panel's panel-select), so
+      # either's metrics come from here.
+      - job_name: straylight
         static_configs:
           - targets: ["brick1982:8767"]
             labels: {instance: brick1982}
@@ -374,7 +378,8 @@ additionalPrometheusRulesMap:
               severity: critical
             annotations:
               summary: "https://*.brick.nozdormu.cloud has failed for 5 minutes: check the certificate (`openssl s_client`), front-door/caddy's EXTERNAL-IP and who answers ARP for 192.168.1.221"
-  # The bedroom's SHT35 is read on brick1982 (rpi_lcars) and copied into
+  # The bedroom's SHT35 is read on brick1982 (by the panel on it: straylight's
+  # panel_room_*, or LCARS' lcars_room_*) and copied into
   # Home Assistant. HA started while brick1982 was off on 2026-10-23 and its
   # copy stayed unavailable for three days with the sensor fine and nothing
   # noticing (home-assistant#9). HA's watchdog now restarts it after 15
@@ -386,7 +391,7 @@ additionalPrometheusRulesMap:
         rules:
           - alert: BedroomSensorMissingInHomeAssistant
             expr: |
-              lcars_room_sensor_up == 1
+              (panel_room_sensor_up == 1 or lcars_room_sensor_up == 1)
               unless on() (hass_entity_available{entity="sensor.bedroom_temperature"} == 1)
             for: 30m
             labels:
