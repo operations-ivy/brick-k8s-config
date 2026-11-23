@@ -13,6 +13,11 @@
 #   often Japanese), else the first.
 # - Text subtitles are kept; if the subtitles can't be converted (picture
 #   subtitles, such as a Blu-ray's), the copy is made without them.
+# - A video that is already small enough (H.264, 8-bit 4:2:0, at most 480
+#   lines, at most $MAX_COPY_KBPS overall) is not encoded again: its video is
+#   copied as it is, which takes seconds instead of hours on a Pi. Its audio
+#   is copied too if it's AAC with at most two channels, else made AAC stereo.
+#   If the copy fails, it is encoded as usual.
 # - Originals are never changed or deleted.
 # - Pictures, subtitles and metadata files are copied beside the copies.
 # - One run at a time (a lock file in $DST), however the run was started.
@@ -26,6 +31,7 @@ DST=${DST:-/movies/480p}
 SETTLE=${SETTLE:-600}
 THREADS=${THREADS:-2}
 PRESET=${PRESET:-medium}  # x264 preset: veryfast is about twice as fast, files ~20-30% bigger
+MAX_COPY_KBPS=${MAX_COPY_KBPS:-3000}  # above this a small video is still encoded, to shrink it
 
 audio_track() {  # audio_track <input>: "0:<index>" of an English audio track, or nothing
     local index
@@ -34,10 +40,42 @@ audio_track() {  # audio_track <input>: "0:<index>" of an English audio track, o
     [ -n "$index" ] && echo "0:$index"
 }
 
+video_copyable() {  # video_copyable <input>: true if its first video stream needs no encoding
+    ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,pix_fmt,height:format=bit_rate \
+        -of default=noprint_wrappers=1 "$1" | awk -F= -v max="$MAX_COPY_KBPS" '
+        { v[$1] = $2 }
+        END {
+            ok = v["codec_name"] == "h264" && v["pix_fmt"] == "yuv420p" &&
+                 v["height"] ~ /^[0-9]+$/ && v["height"] <= 480 &&
+                 v["bit_rate"] ~ /^[0-9]+$/ && v["bit_rate"] <= max * 1000
+            exit !ok
+        }'
+}
+
+audio_codec() {  # audio_codec <input> [0:<index>]: ffmpeg's audio options for that track (else the first)
+    local want=${2-}
+    want=${want#0:}
+    ffprobe -v error -select_streams a -show_entries stream=index,codec_name,channels -of csv=p=0 "$1" |
+        awk -F, -v want="$want" '
+        want == "" || $1 == want { codec = $2; channels = $3; found = 1; exit }
+        END {
+            if (found && codec == "aac" && channels ~ /^[0-9]+$/ && channels <= 2) print "-c:a copy"
+            else print "-c:a aac -ac 2 -b:a 128k"
+        }'
+}
+
 encode() {  # encode <input> <output> [subtitle options...]
-    local in=$1 out=$2 audio
+    local in=$1 out=$2 audio acodec
     shift 2
     audio=$(audio_track "$in")
+    if video_copyable "$in"; then
+        read -ra acodec <<< "$(audio_codec "$in" "$audio")"
+        echo "already small: copying the video stream, not encoding it"
+        nice -n 19 ffmpeg -nostdin -hide_banner -loglevel error -y -i "$in" \
+            -map 0:v:0 -map "${audio:-0:a:0?}" "$@" \
+            -c:v copy "${acodec[@]}" -movflags +faststart -f mp4 "$out" && return 0
+        echo "the copy failed; encoding instead"
+    fi
     nice -n 19 ffmpeg -nostdin -hide_banner -loglevel error -y -i "$in" \
         -map 0:v:0 -map "${audio:-0:a:0?}" "$@" \
         -vf "scale='trunc(ih*dar/2)*2':ih,setsar=1,scale=-2:'min(480,ih)',setsar=1" \

@@ -527,6 +527,11 @@ the same picture there.
 - **Pictures, subtitles and metadata** beside a video (`poster.jpg`,
   `X.jpg`, `X.srt`, `info.json`, `X.nfo`; the laptop's ingest ships them)
   are copied to the same path under `480p`, again when the original changes.
+- **Already small, not encoded again:** a video that is already H.264
+  (8-bit 4:2:0), at most 480 lines and at most `MAX_COPY_KBPS` (3000) overall
+  has its video stream copied as it is: seconds instead of hours on a Pi.
+  Its audio is copied if it's AAC stereo, else made AAC stereo. If the copy
+  fails, the video is encoded as usual. The workers do the same.
 - **The script** is `media/convert-480p.sh`; `media/movies-script.yaml` is
   generated from it with `scripts/media-configmap` (`tests/test_media.py`
   checks they match). Logs: `kubectl -n media logs job/<latest>` or Loki,

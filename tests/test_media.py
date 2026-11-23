@@ -226,5 +226,87 @@ class SidecarTest(unittest.TestCase):
             self.assertEqual((dst / "tv/Show/poster.jpg").read_text(), "new")
 
 
+FAKE_PROBE = """#!/bin/sh
+d=$(dirname "$0")
+case "$*" in
+  *v:0*) cat "$d/video" ;;
+  *codec_name,channels*) cat "$d/audio" ;;
+  *) cat "$d/lang" ;;
+esac
+"""
+
+# ffmpeg that records its arguments, and fails a stream copy when told to.
+FAKE_FFMPEG = """#!/bin/sh
+echo "$*" >> "$(dirname "$0")/ffmpeg.log"
+case "$*" in *"-c:v copy"*) [ -e "$(dirname "$0")/copy-fails" ] && exit 1 ;; esac
+exit 0
+"""
+
+SMALL = "codec_name=h264\nheight=480\npix_fmt=yuv420p\nbit_rate=1811234\n"
+
+
+class StreamCopyTest(unittest.TestCase):
+    """A video that's already 480p H.264 is copied, not encoded again."""
+
+    def run_script(self, call: str, video: str = SMALL, audio: str = "1,aac,2\n", lang: str = "1,eng\n",
+                   copy_fails: bool = False) -> tuple[subprocess.CompletedProcess, list[str]]:
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = Path(tmp)
+            for name, text in (("video", video), ("audio", audio), ("lang", lang)):
+                (tools / name).write_text(text)
+            for name, text in (("ffprobe", FAKE_PROBE), ("ffmpeg", FAKE_FFMPEG)):
+                (tools / name).write_text(text)
+                (tools / name).chmod(0o755)
+            if copy_fails:
+                (tools / "copy-fails").touch()
+            env = dict(os.environ, PATH=f"{tmp}:{os.environ['PATH']}")
+            result = subprocess.run(["bash", "-c", f'source "$1"; {call}', "bash", str(MEDIA / "convert-480p.sh")],
+                                    capture_output=True, text=True, env=env)
+            log = tools / "ffmpeg.log"
+            return result, log.read_text().splitlines() if log.exists() else []
+
+    def copyable(self, video: str) -> bool:
+        return self.run_script("video_copyable x.mkv", video=video)[0].returncode == 0
+
+    def test_only_small_h264_is_copied(self):
+        self.assertTrue(self.copyable(SMALL))
+        for why, video in (
+            ("720p", SMALL.replace("height=480", "height=720")),
+            ("HEVC", SMALL.replace("h264", "hevc")),
+            ("10-bit", SMALL.replace("yuv420p", "yuv420p10le")),
+            ("over MAX_COPY_KBPS", SMALL.replace("1811234", "6000000")),
+            ("no bitrate", SMALL.replace("1811234", "N/A")),
+            ("no video", ""),
+        ):
+            with self.subTest(why):
+                self.assertFalse(self.copyable(video))
+
+    def test_audio_is_copied_only_if_aac_stereo(self):
+        cases = (("1,aac,2\n", "", "-c:a copy"),
+                 ("1,ac3,6\n", "", "-c:a aac -ac 2 -b:a 128k"),
+                 ("1,aac,6\n", "", "-c:a aac -ac 2 -b:a 128k"),
+                 # The chosen (English) track decides, not the first.
+                 ("1,ac3,6\n2,aac,2\n", "0:2", "-c:a copy"),
+                 ("1,aac,2\n2,flac,2\n", "0:2", "-c:a aac -ac 2 -b:a 128k"))
+        for audio, track, expected in cases:
+            with self.subTest(audio=audio, track=track):
+                result, _ = self.run_script(f"audio_codec x.mkv {track}", audio=audio)
+                self.assertEqual(result.stdout.strip(), expected)
+
+    def test_encode_copies_small_videos_and_encodes_the_rest(self):
+        _, [args] = self.run_script("encode in.mkv out.mp4 -sn")
+        self.assertIn("-c:v copy -c:a copy", args)
+        self.assertNotIn("libx264", args)
+        _, [args] = self.run_script("encode in.mkv out.mp4 -sn", video=SMALL.replace("height=480", "height=1080"))
+        self.assertIn("libx264", args)
+
+    def test_a_failed_copy_falls_back_to_encoding(self):
+        result, calls = self.run_script("encode in.mkv out.mp4 -sn", copy_fails=True)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(calls), 2)
+        self.assertIn("-c:v copy", calls[0])
+        self.assertIn("libx264", calls[1])
+
+
 if __name__ == "__main__":
     unittest.main()
