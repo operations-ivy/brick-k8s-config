@@ -10,7 +10,13 @@ serviceMonitor:
   honorLabels: true
 
 # Pushed series otherwise vanish on a pod restart, taking "last successful
-# sync" timestamps with them until the next run that sets them.
+# sync" timestamps and maintenance windows with them until the next run that
+# sets them. The chart only mounts the volume at /data: the gateway saves
+# there only when told to (2026-11-23: a restart in brick2000's Wi-Fi outage
+# lost brick1982's indefinite maintenance window; /data was empty).
+extraArgs:
+  - --persistence.file=/data/pushgateway.data
+
 persistentVolume:
   enabled: true
   size: 100Mi
