@@ -251,18 +251,18 @@ class StreamCopyTest(unittest.TestCase):
     def run_script(self, call: str, video: str = SMALL, audio: str = "1,aac,2\n", lang: str = "1,eng\n",
                    copy_fails: bool = False) -> tuple[subprocess.CompletedProcess, list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
-            bin_ = Path(tmp)
+            tools = Path(tmp)
             for name, text in (("video", video), ("audio", audio), ("lang", lang)):
-                (bin_ / name).write_text(text)
+                (tools / name).write_text(text)
             for name, text in (("ffprobe", FAKE_PROBE), ("ffmpeg", FAKE_FFMPEG)):
-                (bin_ / name).write_text(text)
-                (bin_ / name).chmod(0o755)
+                (tools / name).write_text(text)
+                (tools / name).chmod(0o755)
             if copy_fails:
-                (bin_ / "copy-fails").touch()
+                (tools / "copy-fails").touch()
             env = dict(os.environ, PATH=f"{tmp}:{os.environ['PATH']}")
             result = subprocess.run(["bash", "-c", f'source "$1"; {call}', "bash", str(MEDIA / "convert-480p.sh")],
                                     capture_output=True, text=True, env=env)
-            log = bin_ / "ffmpeg.log"
+            log = tools / "ffmpeg.log"
             return result, log.read_text().splitlines() if log.exists() else []
 
     def copyable(self, video: str) -> bool:
