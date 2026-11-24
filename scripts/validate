@@ -156,6 +156,22 @@ def argo_problems(apps: list[dict], releases: list[str]) -> list[str]:
     return errors
 
 
+# Argo CD's per-object sync option, and the dry run that matches it.
+SYNC_OPTIONS = "argocd.argoproj.io/sync-options"
+SERVER_SIDE = ["--server-side", "--field-manager=argocd-controller"]
+
+
+def wants_server_side(text: str) -> bool:
+    """Whether any object in a manifest asks Argo CD for a server-side apply."""
+    for doc in yaml.safe_load_all(text):
+        if not isinstance(doc, dict):
+            continue
+        options = ((doc.get("metadata") or {}).get("annotations") or {}).get(SYNC_OPTIONS, "")
+        if "ServerSideApply=true" in options.split(","):
+            return True
+    return False
+
+
 def check_cluster(config: dict, mans: list[Path]) -> list[str]:
     errors = []
     optional = tuple(config.get("not_deployed") or [])
@@ -165,8 +181,7 @@ def check_cluster(config: dict, mans: list[Path]) -> list[str]:
         # As Argo CD applies it: server-side when the manifest asks (a client-side
         # apply stores the whole object in an annotation, too big for the
         # timeline's vendored ConfigMap).
-        server_side = "ServerSideApply=true" in p.read_text()
-        side = ["--server-side", "--field-manager=argocd-controller"] if server_side else []
+        side = SERVER_SIDE if wants_server_side(p.read_text()) else []
         dry = run(["kubectl", "apply", "--dry-run=server", *side, "-f", str(p)])
         if dry.returncode:
             errors.append(f"{rel}: server dry run fails: {dry.stderr.strip()[:300]}")
