@@ -1,0 +1,167 @@
+# Cameras: snapshots from the cameras' streams, on brick2000's /extra.
+#
+# lidlesseye (brick-cicd-config's lidlesseye/: a Pi Zero W, the OctoCam) only
+# streams: its MediaMTX encodes the camera in hardware, and its one core can't
+# decode. This CronJob takes a frame from the stream every 5 minutes (one
+# ffmpeg, a second or two of a brick2000 core) into
+# /extra/cameras/lidlesseye/<date>/<HHMM>.jpg and latest.jpg, local time, 14
+# days kept (~0.3 MB a frame: ~80 MB a day). A camera that's off is a skipped
+# snapshot, logged, not a failed Job. Deployed by cluster-manifests.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cameras
+  labels:
+    name: cameras
+---
+# It reads the cameras' streams and writes local files: DNS and RTSP to the
+# camera, nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: snapshots
+  namespace: cameras
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 192.168.1.232/32  # lidlesseye (DHCP reservation)
+      ports:
+        - {protocol: TCP, port: 8554}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snapshot-script
+  namespace: cameras
+data:
+  snapshot.sh: |
+    #!/bin/bash
+    # One snapshot from a camera's stream (cameras.yaml's CronJob): a frame of
+    # $STREAM saved as $DEST/<date>/<HHMM>.jpg and $DEST/latest.jpg, in local time
+    # (TZ), and days older than $KEEP_DAYS pruned. The camera only streams (its Pi
+    # can't decode); this decodes one frame. A camera that's off is a skipped
+    # snapshot, not a failure.
+    set -euo pipefail
+
+    day=$(date +%F)
+    dir="$DEST/$day"
+    mkdir -p "$dir"
+    out="$dir/$(date +%H%M).jpg"
+    part="$dir/.$(date +%H%M).part.jpg"
+
+    # 60 s: the stream answers in a second or two and a keyframe comes every 2 s.
+    if ! timeout 60 ffmpeg -nostdin -loglevel error -rtsp_transport tcp -i "$STREAM" \
+            -frames:v 1 -update 1 -q:v 3 -y "$part"; then
+        rm -f "$part"
+        echo "snapshot skipped: $STREAM didn't answer (the camera is off or away)"
+        exit 0
+    fi
+    mv "$part" "$out"
+    cp "$out" "$DEST/.latest.part.jpg"
+    mv "$DEST/.latest.part.jpg" "$DEST/latest.jpg"
+    echo "snapshot $out ($(stat -c %s "$out") bytes)"
+
+    # Each day is a folder: drop the ones past KEEP_DAYS (by name, not mtime).
+    cutoff=$(date -d "-$KEEP_DAYS days" +%F)
+    for d in "$DEST"/????-??-??; do
+        [ -d "$d" ] || continue
+        if [[ "$(basename "$d")" < "$cutoff" ]]; then
+            rm -rf "$d"
+            echo "pruned $(basename "$d")"
+        fi
+    done
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lidlesseye-snapshots
+  namespace: cameras
+spec:
+  schedule: "*/5 * * * *"
+  timeZone: America/New_York
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 240
+      template:
+        metadata:
+          labels:
+            app: lidlesseye-snapshots
+        spec:
+          restartPolicy: Never
+          # /extra is brick2000's USB drive.
+          nodeSelector:
+            kubernetes.io/hostname: brick2000
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            # /extra is exFAT, owned by uid 1000 (zaphod) through its mount
+            # options: only that uid can write there.
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: snapshot
+              # linuxserver's ffmpeg 9.0.2 (2026-11-06), pinned by digest.
+              image: docker.io/linuxserver/ffmpeg:9.0.2-cli-ls89@sha256:822d04f0b2d0c4847430f5cc90f20ea48be866bb502ece63fdeb729400bf5361
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "/scripts/snapshot.sh"]
+              env:
+                - name: STREAM
+                  value: rtsp://lidlesseye:8554/cam
+                - name: DEST
+                  value: /cameras/lidlesseye
+                - name: KEEP_DAYS
+                  value: "14"
+                - name: TZ
+                  value: America/New_York
+              volumeMounts:
+                - name: cameras
+                  mountPath: /cameras
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: "1"
+                  memory: 256Mi
+          volumes:
+            - name: cameras
+              hostPath:
+                path: /extra/cameras
+                type: DirectoryOrCreate
+            - name: scripts
+              configMap:
+                name: snapshot-script
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi

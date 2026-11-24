@@ -211,6 +211,17 @@ prometheus:
         static_configs:
           - targets: ["presto:8767"]
             labels: {instance: presto}
+      # lidlesseye, the OctoCam (brick-cicd-config's lidlesseye/): its
+      # node-exporter, and MediaMTX's own metrics (paths, readers, bytes) for
+      # the camera stream the cameras/ snapshots read.
+      - job_name: lidlesseye-node
+        static_configs:
+          - targets: ["lidlesseye:9100"]
+            labels: {instance: lidlesseye}
+      - job_name: lidlesseye-mediamtx
+        static_configs:
+          - targets: ["lidlesseye:9998"]
+            labels: {instance: lidlesseye}
     # brick69 goes wardriving, out of reach for hours: a Prometheus agent on it
     # keeps scraping and remote-writes the backlog once it's home (wigle-sync's
     # pi/setup-metrics.sh), through prometheus.brick.nozdormu.cloud. The
