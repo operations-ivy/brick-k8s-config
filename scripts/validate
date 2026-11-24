@@ -162,7 +162,12 @@ def check_cluster(config: dict, mans: list[Path]) -> list[str]:
     unmanaged = tuple(config.get("unmanaged") or [])
     for p in mans:
         rel = p.relative_to(ROOT)
-        dry = run(["kubectl", "apply", "--dry-run=server", "-f", str(p)])
+        # As Argo CD applies it: server-side when the manifest asks (a client-side
+        # apply stores the whole object in an annotation, too big for the
+        # timeline's vendored ConfigMap).
+        server_side = "ServerSideApply=true" in p.read_text()
+        side = ["--server-side", "--field-manager=argocd-controller"] if server_side else []
+        dry = run(["kubectl", "apply", "--dry-run=server", *side, "-f", str(p)])
         if dry.returncode:
             errors.append(f"{rel}: server dry run fails: {dry.stderr.strip()[:300]}")
             continue
