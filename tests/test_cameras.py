@@ -32,6 +32,9 @@ class Manifests(unittest.TestCase):
         self.assertEqual(cameras["hostPath"]["path"], "/extra/cameras")
         self.assertEqual(pod["securityContext"]["runAsUser"], 1000)  # /extra is exFAT, uid 1000's
 
+    def test_suspended_until_the_user_starts_it(self):
+        self.assertTrue(docs()["CronJob"]["spec"]["suspend"])
+
     def test_it_reaches_only_dns_and_the_cameras_rtsp(self):
         egress = docs()["NetworkPolicy"]["spec"]["egress"]
         ports = sorted(p["port"] for rule in egress for p in rule["ports"])

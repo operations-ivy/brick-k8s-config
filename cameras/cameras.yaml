@@ -90,6 +90,9 @@ metadata:
   name: lidlesseye-snapshots
   namespace: cameras
 spec:
+  # Off for now (the user, 2026-11-24): the stream runs, no snapshots are
+  # taken. false (or this line gone) starts them.
+  suspend: true
   schedule: "*/5 * * * *"
   timeZone: America/New_York
   concurrencyPolicy: Forbid
