@@ -33,6 +33,7 @@ import argparse
 import importlib.machinery
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -172,8 +173,31 @@ def wants_server_side(text: str) -> bool:
     return False
 
 
+NEW_NAMESPACE = re.compile(r'namespaces "([^"]+)" not found')
+
+
+def defined_namespaces(mans: list[Path]) -> set[str]:
+    """The Namespaces the repo's manifests create (Argo CD creates them on sync)."""
+    names = set()
+    for p in mans:
+        for doc in yaml.safe_load_all(p.read_text()):
+            if isinstance(doc, dict) and doc.get("kind") == "Namespace":
+                names.add(doc["metadata"]["name"])
+    return names
+
+
+def only_new_namespaces(stderr: str, defined: set[str]) -> set[str]:
+    """The namespaces a failed dry run lacks, when that's its only complaint and
+    the repo creates each of them: a new namespace's objects can only be
+    checked once it exists. Empty otherwise (a real failure)."""
+    missing = set(NEW_NAMESPACE.findall(stderr))
+    others = [line for line in stderr.splitlines() if line.strip() and not NEW_NAMESPACE.search(line)]
+    return missing if missing and missing <= defined and not others else set()
+
+
 def check_cluster(config: dict, mans: list[Path]) -> list[str]:
     errors = []
+    defined = defined_namespaces(mans)
     optional = tuple(config.get("not_deployed") or [])
     unmanaged = tuple(config.get("unmanaged") or [])
     for p in mans:
@@ -184,6 +208,9 @@ def check_cluster(config: dict, mans: list[Path]) -> list[str]:
         side = SERVER_SIDE if wants_server_side(p.read_text()) else []
         dry = run(["kubectl", "apply", "--dry-run=server", *side, "-f", str(p)])
         if dry.returncode:
+            if new := only_new_namespaces(dry.stderr, defined):
+                print(f"NOTE {rel}: new namespace {', '.join(sorted(new))}: checked once Argo CD creates it")
+                continue
             errors.append(f"{rel}: server dry run fails: {dry.stderr.strip()[:300]}")
             continue
         # Argo CD keeps everything else on main; only what it doesn't manage
