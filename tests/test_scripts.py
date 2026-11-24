@@ -162,6 +162,24 @@ class ValidateTests(unittest.TestCase):
         self.assertEqual(merged, {"service": {"port": 2, "type": "ClusterIP"}, "x": 1})
 
 
+class NewNamespaceTests(unittest.TestCase):
+    """A new namespace's objects fail the server dry run until it exists."""
+
+    def test_only_a_missing_namespace_the_repo_creates_is_let_through(self):
+        missing = 'Error from server (NotFound): error when creating "x.yaml": namespaces "cameras" not found\n'
+        self.assertEqual(validate.only_new_namespaces(missing * 2, {"cameras"}), {"cameras"})
+        self.assertEqual(validate.only_new_namespaces(missing, {"media"}), set())  # not ours to create
+
+    def test_any_other_complaint_is_still_a_failure(self):
+        mixed = ('namespaces "cameras" not found\n'
+                 'The CronJob "x" is invalid: spec.schedule: Invalid value\n')
+        self.assertEqual(validate.only_new_namespaces(mixed, {"cameras"}), set())
+
+    def test_the_repos_namespaces_are_found(self):
+        config = yaml.safe_load((validate.ROOT / "validate.yaml").read_text())
+        self.assertIn("cameras", validate.defined_namespaces(validate.manifests(config)))
+
+
 class JoinWorkerTests(unittest.TestCase):
     def test_cgroups_needed_until_both_flags_are_on(self):
         self.assertTrue(join_worker.needs_cgroups("console=tty1 rootwait"))
