@@ -1,6 +1,7 @@
 """cameras/: lidlesseye's snapshot CronJob and its script (stdlib unittest)."""
 
 import datetime
+import functools
 import os
 import stat
 import subprocess
@@ -14,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CAMERAS = ROOT / "cameras" / "cameras.yaml"
 
 
+@functools.cache
 def docs() -> dict[str, dict]:
     return {d["kind"]: d for d in yaml.safe_load_all(CAMERAS.read_text())}
 
@@ -45,7 +47,7 @@ class Script(unittest.TestCase):
     """snapshot.sh from the ConfigMap, with a stand-in ffmpeg."""
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
         self.dest = self.tmp / "lidlesseye"
@@ -58,7 +60,7 @@ class Script(unittest.TestCase):
         f.chmod(f.stat().st_mode | stat.S_IEXEC)
 
     def run_script(self) -> subprocess.CompletedProcess:
-        env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}", "STREAM": "rtsp://cam/cam",
+        env = {**os.environ, "PATH": os.pathsep.join([str(self.bin), os.environ["PATH"]]), "STREAM": "rtsp://cam/cam",
                "DEST": str(self.dest), "KEEP_DAYS": "14"}
         return subprocess.run(["bash", str(self.script)], env=env, capture_output=True, text=True)
 
